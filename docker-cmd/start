@@ -1,0 +1,21 @@
+#!/bin/bash
+
+resp=$(sudo docker ps --quiet --all --filter="name=dsyelp")
+repos=$(realpath -e "$(pwd)/../")
+
+if [ "${resp}" = "" ]; then
+  sudo docker run \
+    --publish="80:80" \
+    --add-host='dsyelp.local:127.0.0.1' \
+    --privileged \
+    --cap-add='ALL' \
+    --volume="${repos}:/App/repos" \
+    --detach \
+    --tty \
+    --interactive \
+    --name='dsyelp' \
+    dsyelp;
+else
+  sudo docker start dsyelp
+fi;
+
