@@ -1,0 +1,9 @@
+
+type Query {
+  business(id: ID!): Business
+}
+
+type Business {
+  name: String!
+}
+
