@@ -24,11 +24,15 @@
     "babel-core": "6.26.0",
     "babel-loader": "7.1.2",
     "babel-plugin-relay": "1.4.1",
-    "babel-preset-react": "6.24.1",
     "typescript": "2.6.2",
     "ts-loader": "3.2.0",
     "@types/react": "16.0.34",
     "@types/react-dom": "16.0.3",
-    "webpack": "3.10.0"
+    "webpack": "3.10.0",
+    "relay-compiler": "1.4.1"
+  },
+  "scripts": {
+    "relay": "relay-compiler --src ./src/assets --schema ./src/schema/schema.graphql",
+    "webpack": "node_modules/webpack/bin/webpack.js"
   }
 }

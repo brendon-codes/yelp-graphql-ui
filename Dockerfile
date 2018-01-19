@@ -45,7 +45,7 @@ RUN apt-get install -y nginx;
 ##
 ## Node
 ##
-RUN add-apt-repository -y -r ppa:chris-lea/node.js;
+curl -sL https://deb.nodesource.com/setup_8.x | bash
 RUN apt-get update;
 RUN apt-get install -y nodejs;
 
