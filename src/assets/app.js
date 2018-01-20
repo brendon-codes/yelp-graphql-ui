@@ -1,4 +1,6 @@
 
+// @flow
+
 import React from "react";
 import {graphql, QueryRenderer} from 'react-relay';
 
@@ -24,7 +26,7 @@ class App extends React.Component {
           if (!props) {
             return <div>Loading...</div>;
           }
-          return <div>User ID: {props.business.name}</div>;
+          return <div>Business Name: {props.business.name}</div>;
         }}
       />
     );
