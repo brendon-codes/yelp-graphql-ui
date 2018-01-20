@@ -1,0 +1,31 @@
+
+server {
+    listen 0.0.0.0:80 default;
+    server_name "dsyelp.local";
+
+    location = /favicon.ico {
+        return 404;
+        break;
+    }
+
+    location = /robots.txt {
+        return 404;
+        break;
+    }
+
+    location = /v3/graphql {
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host api.yelp.com;
+        proxy_pass https://api.yelp.com;
+        proxy_ssl_session_reuse off;
+        proxy_redirect off;
+        break;
+    }
+
+    location / {
+        root /App/repos/dsyelp/src/webroot;
+        break;
+    }
+}
+

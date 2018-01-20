@@ -1,23 +1,28 @@
+
+// @flow
+
 import {
   Environment,
   Network,
   RecordSource,
   Store,
-} from 'relay-runtime';
+} from "relay-runtime";
+
+import config from "./config";
+
 
 function fetchQuery(
   operation,
   variables,
 ) {
-  return fetch('/graphql', {
-    method: 'POST',
+  return fetch("/v3/graphql", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Authorization": ["Bearer", config.YELP_TOKEN].join(" "),
+      "Content-Type": "application/graphql",
+      "Accept-Language": "en_US"
     },
-    body: JSON.stringify({
-      query: operation.text,
-      variables,
-    }),
+    body: operation.text
   }).then(response => {
     return response.json();
   });

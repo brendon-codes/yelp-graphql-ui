@@ -37,58 +37,14 @@ const BuildBase = function (inJs, outJs, outCss) {
           test: /\.js$/,
           use: [
             {
-              loader: "ts-loader"
+              loader: "babel-loader",
+              options: {
+                compact: false
+              }
             },
-            // {
-            //   loader: "babel-loader",
-            //   options: {
-            //     compact: true
-            //   }
-            // }
           ],
           exclude: /node_modules/
         }
-        // {
-        //   test: /\.scss$/,
-        //   use: ExtractTextPlugin.extract({
-        //     fallback: "style-loader",
-        //     use: [
-        //       {
-        //         loader: "css-loader",
-        //         options: {
-        //           sourceMap: true,
-        //           minimize: false
-        //         }
-        //       },
-        //       {
-        //         loader: "sass-loader"
-        //       }
-        //     ]
-        //   })
-        // },
-        // {
-        //   test: /\.css$/,
-        //   use: ExtractTextPlugin.extract({
-        //     fallback: "style-loader",
-        //     use: [
-        //       {
-        //         loader: "css-loader",
-        //         options: {
-        //           sourceMap: true,
-        //           minimize: false
-        //         }
-        //       }
-        //     ]
-        //   })
-        // },
-        // {
-        //   test: /\.(png|woff|woff2|eot|ttf|svg)$/,
-        //   use: [
-        //     {
-        //       loader: "url-loader"
-        //     }
-        //   ]
-        // }
       ]
     }
   };
