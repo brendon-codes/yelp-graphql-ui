@@ -3,6 +3,7 @@ type Query {
   search(
     location: String!,
     radius: Float!
+    categories: String
   ): Businesses
 }
 
