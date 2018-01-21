@@ -2,5 +2,6 @@
 !/secret/.gitkeep
 /node_modules/
 /src/webroot/*.js
+/src/webroot/*.css
 /src/webroot/*.map
 __generated__/

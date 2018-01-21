@@ -5,14 +5,13 @@ const Webpack = require("webpack");
 const Extend = require("util")._extend;
 const Path = require("path");
 //const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
-//const ExtractTextPlugin = require("extract-text-webpack-plugin");
+const ExtractTextPlugin = require("extract-text-webpack-plugin");
 
-//process.traceDeprecation = true;
 
 const BuildBase = function (inJs, outJs, outCss) {
   return {
     devtool: "inline-source-map",
-    watch: false,
+    watch: true,
     entry: {
       site: inJs
     },
@@ -27,9 +26,9 @@ const BuildBase = function (inJs, outJs, outCss) {
         NODE_ENV: "development",
         DEBUG: true
       }),
-      // new ExtractTextPlugin({
-      //   filename: outCss
-      // })
+      new ExtractTextPlugin({
+        filename: outCss
+      })
     ],
     module: {
       rules: [
@@ -44,6 +43,47 @@ const BuildBase = function (inJs, outJs, outCss) {
             },
           ],
           exclude: /node_modules/
+        },
+        {
+          test: /\.scss$/,
+          use: ExtractTextPlugin.extract({
+            fallback: "style-loader",
+            use: [
+              {
+                loader: "css-loader",
+                options: {
+                  sourceMap: true,
+                  minimize: false
+                }
+              },
+              {
+                loader: "sass-loader"
+              }
+            ]
+          })
+        },
+        {
+          test: /\.css$/,
+          use: ExtractTextPlugin.extract({
+            fallback: "style-loader",
+            use: [
+              {
+                loader: "css-loader",
+                options: {
+                  sourceMap: true,
+                  minimize: false
+                }
+              }
+            ]
+          })
+        },
+        {
+          test: /\.(png|woff|woff2|eot|ttf|svg)$/,
+          use: [
+            {
+              loader: "url-loader"
+            }
+          ]
         }
       ]
     }
