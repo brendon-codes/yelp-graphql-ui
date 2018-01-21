@@ -1,9 +1,30 @@
 
 type Query {
-  business(id: ID!): Business
+  search(
+    location: String!,
+    radius: Float!
+  ): Businesses
+}
+
+type Businesses {
+  total: Int,
+  business: [Business]
+}
+
+type Location {
+  zip_code: String
+}
+
+type Category {
+  title: String
+  alias: String
 }
 
 type Business {
-  name: String!
+  name: String
+  url: String
+  distance: Float
+  location: Location
+  categories: [Category]
 }
 

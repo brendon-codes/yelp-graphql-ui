@@ -15,14 +15,17 @@ function fetchQuery(
   operation,
   variables,
 ) {
-  return fetch("/v3/graphql", {
+  return fetch("/graphql", {
     method: "POST",
     headers: {
       "Authorization": ["Bearer", config.YELP_TOKEN].join(" "),
-      "Content-Type": "application/graphql",
+      "Content-Type": "application/json",
       "Accept-Language": "en_US"
     },
-    body: operation.text
+    body: JSON.stringify({
+      query: operation.text,
+      variables: variables
+    })
   }).then(response => {
     return response.json();
   });
