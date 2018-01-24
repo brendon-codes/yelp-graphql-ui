@@ -1,10 +1,8 @@
 
 // @flow
 
-// Load Styles
+import Fontawesome from "font-awesome/scss/font-awesome.scss";
 import Styles from "./css/loader.scss";
-
-// Load App
-import AppLoader from "./js";
+import Application from "./js";
 
 export default true;

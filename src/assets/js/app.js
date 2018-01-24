@@ -8,6 +8,7 @@ import { Transport as LokkaTransport } from "lokka-transport-http";
 
 import Autosuggest from "react-autosuggest";
 import TrieSearch from "trie-search";
+import Dexie from "dexie";
 
 import config from "./config";
 
@@ -29,36 +30,11 @@ const GQL_CLIENT: Lokka = (
   })
 );
 
-const QUERY_BUSINESSES = (
-  `
-    query appQuery (
-      $zip_code: String!,
-      $distance: Float!,
-      $categories: String
-    ) {
-      search(
-        location: $zip_code,
-        radius: $distance,
-        categories: $categories
-      ) {
-        total
-        business {
-          id
-          name
-          url
-          distance
-          location {
-            zip_code
-          }
-          categories {
-            title
-            alias
-          }
-        }
-      }
-    }
-  `
-);
+const DB: Dexie = new Dexie("dsyelp");
+DB.version(1).stores({
+  favorites: "&business_id"
+});
+DB.open();
 
 
 class App extends React.Component {
@@ -70,6 +46,10 @@ class App extends React.Component {
 
   buildDefaultState (): Object {
     return {
+      // This should either be "search" or "favorite"
+      fetchMode: null,
+      offset: 0,
+      favorites: null,
       catTrie: null,
       suggestedCats: [],
       selectedCat: null,
@@ -194,25 +174,54 @@ class App extends React.Component {
   }
 
   componentWillMount (): boolean {
-    this.loadCategories();
+    this.loadInitData();
     return true;
   }
 
-  loadCategories (): boolean {
-    fetch(
-      "/categories",
-      {
-        method: "GET"
-      }
-    )
-      .then(response => response.json())
-      .then(data => {
+  loadInitData (): boolean {
+    Promise
+      .all([
+        this.loadCategories(),
+        this.loadFavorites()
+      ])
+      .then(resGroups => {
+        return {
+          categories: resGroups[0],
+          favorites: resGroups[1]
+        };
+      })
+      .then(obj => {
         this.setState({
-          catTrie: this.preProcessCategories(data)
-        });
-        return true;
+          favorites: this.preProcessFavorites(obj.favorites),
+          catTrie: this.preProcessCategories(obj.categories)
+        })
       });
     return true;
+  }
+
+  preProcessFavorites (favorites): Set {
+    const results: Set = new Set(favorites.map(fav => fav.business_id));
+    return results;
+  }
+
+  loadFavorites () {
+    return (
+      DB
+        .favorites
+        .toArray(favorites => favorites)
+    );
+  }
+
+  loadCategories () {
+    return (
+      fetch(
+        "/categories",
+        {
+          method: "GET"
+        }
+      )
+      .then(response => response.json())
+    );
   }
 
   cleanCatTitle (val: String): String {
@@ -256,16 +265,168 @@ class App extends React.Component {
         </div>
       );
     }
+    const [ showPrev: boolean, showNext: boolean ] = this.getPageLinkInfo();
+    const optsPrev: Object = (
+      showPrev ?
+        {
+          onClick: this.pageResults.bind(this, -1),
+          href: "#"
+        } :
+        {}
+    );
+    const optsNext: Object = (
+      showNext ?
+        {
+          onClick: this.pageResults.bind(this, +1),
+          href: "#"
+        } :
+        {}
+    );
+    const start: number = this.state.offset;
+    const end: number = this.state.offset + this.state.businessRecs.length;
     return (
-      <table>
-        <tbody>
-          {this.state.businessRecs.map(biz =>
-            <tr key={biz.id}>
-              <td>{biz.name}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <div>
+        <div>
+          Displaying{" "}
+          <strong>{start}</strong>{" "}
+          <span dangerouslySetInnerHTML={{__html: "&mdash;"}} />{" "}
+          <strong>{end}</strong>{" "}
+          of{" "}
+          <strong>{this.state.businessCountTotal}</strong>{" "}
+          results.
+        </div>
+        <div>
+          <a {...optsPrev}>Prev</a>{" "}
+          <a {...optsNext}>Next</a>
+        </div>
+        <table>
+          <tbody>
+            {this.state.businessRecs.map(this.renderBusinessRec.bind(this))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  pageResults (pageCount: number, event: Object): boolean {
+    event.preventDefault();
+    const offset: number = this.getPageOffset(pageCount);
+    this.fetchResults(offset);
+    return false;
+  }
+
+  getPageLinkInfo (): Array {
+    const offset: number = this.state.offset;
+    const bizTotal: ?number = this.state.businessCountTotal;
+    const totalIsNull: boolean = (bizTotal === null);
+    const showPrev: boolean = (!totalIsNull && (offset > 0));
+    const showNext: boolean = (
+      (!totalIsNull && ((offset + BIZ_SEARCH_LIMIT) <= bizTotal))
+    );
+    //debugger;
+    return [showPrev, showNext];
+  }
+
+  getPageOffset (pageCount: number): Object {
+    const incVal: number = BIZ_SEARCH_LIMIT * pageCount;
+    const checkOffset: number = this.state.offset + incVal;
+    const totalIsNull: boolean = (this.state.businessCountTotal === null);
+    const offset: number = (() => {
+      if (checkOffset <= 0) {
+        return 0
+      }
+      if (totalIsNull) {
+        return 0;
+      }
+      if (checkOffset > this.state.businessCountTotal) {
+        return this.state.offset
+      }
+      return checkOffset;
+    })();
+    return offset;
+  }
+
+  buildClassNames (classNames: Array): string {
+    return (
+      classNames
+        .filter((v) => (v !== null))
+        .join(" ")
+    );
+  }
+
+  doesBizHavFav (bizId: String): boolean {
+    const res: boolean = this.state.favorites.has(bizId);
+    return res;
+  }
+
+  isFavorite (bizId: string): boolean {
+    return (
+      (this.state.favorites !== null) &&
+        (this.state.favorites.has(bizId))
+    );
+  }
+
+  removeFavorite (bizId: String): boolean {
+    DB
+      .favorites
+      .where("business_id")
+      .equals(bizId)
+      .limit(1)
+      .delete()
+      .then(this.reloadFavorites.bind(this));
+    return true;
+  }
+
+  reloadFavorites (operation): boolean {
+    return (
+      this
+        .loadFavorites()
+        .then(favorites => {
+          this.setState({
+            favorites: this.preProcessFavorites(favorites)
+          });
+          return true;
+        })
+    );
+  }
+
+  addFavorite (bizId: String): boolean {
+    DB
+      .favorites
+      .put({
+        "business_id": bizId
+      })
+      .then(this.reloadFavorites.bind(this));
+    return true;
+  }
+
+  handleClickFav (bizId: String, event: Object): Object {
+    const isFav: boolean = this.isFavorite(bizId);
+    if (isFav) {
+      this.removeFavorite(bizId);
+      return true;
+    }
+    this.addFavorite(bizId);
+    return true;
+  }
+
+  renderBusinessRec (biz: Object): Object {
+    const selected: boolean = this.doesBizHavFav(biz.id);
+    const classes: Array = (
+      selected ?
+        ["fa", "fa-star", "star-selected"] :
+        ["fa", "fa-star-o"]
+    )
+    return (
+      <tr key={biz.id}>
+        <td>
+          <span
+              onClick={this.handleClickFav.bind(this, biz.id)}
+              className={this.buildClassNames(classes)}>
+          </span>
+        </td>
+        <td>{biz.name}</td>
+      </tr>
     );
   }
 
@@ -354,32 +515,260 @@ class App extends React.Component {
     );
   }
 
-  handleSubmitForm (event: Object): boolean {
-    event.preventDefault();
+  fetchSearchResults (): boolean {
     const varCat: ?String = (
       (this.state.selectedCat === null) ?
         null :
         this.state.selectedCat.alias
     );
-    const queryVars: Object = {
-      zip_code: this.state.zip,
-      distance: this.state.distanceMeters,
-      categories: varCat
-    };
+    const queryObj: Object = (
+      this.buildQueryBizSearch(
+        BIZ_SEARCH_LIMIT,
+        this.state.offset,
+        this.state.zip,
+        this.state.distanceMeters,
+        varCat
+      )
+    );
     GQL_CLIENT
-      .query(QUERY_BUSINESSES, queryVars)
+      .send(queryObj.query, queryObj.variables)
       .then((data) => {
         this.setState({
           businessCountTotal: data.search.total,
           businessRecs: data.search.business
         });
       })
+    return true;
+  }
+
+  handleSubmitForm (event: Object): boolean {
+    event.preventDefault();
+    this.setState(
+      {
+        fetchMode: "search"
+      },
+      this.fetchResults.bind(this, 0)
+    );
     return false;
+  }
+
+  queryBusinessFragment () {
+    return (
+      `
+        fragment bizResponse on Business {
+          id
+          name
+          url
+          distance
+          location {
+            zip_code
+          }
+          categories {
+            title
+            alias
+          }
+        }
+      `
+    );
+  }
+
+  buildQueryBizSearch (
+    limit: number,
+    offset: number,
+    zipCode: String,
+    distance: number,
+    category: ?String
+  ) {
+    const query: String = (
+      `
+        ${this.queryBusinessFragment()}
+
+        query appQuery (
+          $limit: Int!,
+          $offset: Int!,
+          $zip_code: String!,
+          $distance: Float!,
+          $categories: String
+        ) {
+          search(
+            limit: $limit,
+            offset: $offset,
+            location: $zip_code,
+            radius: $distance,
+            categories: $categories
+          ) {
+            total
+            business {
+              ...bizResponse
+            }
+          }
+        }
+      `
+    );
+    const variables: Object = {
+      limit: limit,
+      offset: offset,
+      zip_code: zipCode,
+      distance: distance,
+      categories: category
+    };
+    const res: Object = {
+      query: query,
+      variables: variables
+    };
+    console.log(query);
+    console.log(variables);
+    return res;
+  }
+
+  buildQueryBizFavs (limit: number, offset: number, bizIds: Array) {
+    const slicedBizIds: Array = bizIds.slice(offset, limit);
+    const queryArgs: String = (
+      slicedBizIds
+        .map((bizId: String, idx: number) => {
+          return (
+            `$id${idx}: String!`
+          )
+        })
+        .join(", ")
+    )
+    const bizObjs: String = (
+      slicedBizIds
+        .map((bizId: String, idx: number) => {
+          return (
+            `
+              b${idx}:business(id: $id${idx}) {
+                ...bizResponse
+              }
+            `
+          );
+        })
+        .join("")
+    );
+    const query: String = (
+      `
+        ${this.queryBusinessFragment()}
+
+        query appQuery (${queryArgs}) {
+          ${bizObjs}
+        }
+      `
+    );
+    const variables: Object = (
+      this.arrayToObject (
+        slicedBizIds
+          .map((bizId: String, idx: number) => {
+            return [
+              `id${idx}`,
+              bizId
+            ]
+          })
+      )
+    );
+    const res: Object = {
+      query: query,
+      variables: variables
+    };
+    return res;
+  }
+
+  arrayToObject (pairs: Array): Object {
+    return Object.assign(...pairs.map((pair) => ({[pair[0]]: pair[1]})))
   }
 
   isFormDisabled (): boolean {
     return (
       (this.state.zipFinal === null)
+    );
+  }
+
+  exportFavorites (): Array {
+    return Array.from(this.state.favorites.keys());
+  }
+
+  fetchFavResults (): boolean {
+    const queryObj: Object = (
+      this.buildQueryBizFavs(
+        BIZ_SEARCH_LIMIT,
+        this.state.offset,
+        this.exportFavorites()
+      )
+    );
+    GQL_CLIENT
+      .send(queryObj.query, queryObj.variables)
+    // Add this step to normalize the response data
+    // so it is the same as our search response data
+      .then(this.convertBizIdResponseRecs.bind(this))
+      .then((data) => {
+        this.setState({
+          businessCountTotal: data.search.total,
+          businessRecs: data.search.business
+        });
+      })
+    return true;
+  }
+
+  fetchResults (offset: number): boolean {
+    this.setState(
+      {
+        offset: offset
+      },
+      () => {
+        if (this.state.fetchMode === "search") {
+          this.fetchSearchResults();
+          return true;
+        }
+        if (this.state.fetchMode === "favorite") {
+          this.fetchFavResults();
+          return true;
+        }
+        this.setAppFatal();
+      }
+    );
+    return true;
+  }
+
+  setAppFatal (msg): boolean {
+    throw new Error(msg);
+  }
+
+  handleClickShowFavorites (event: Object): boolean {
+    event.preventDefault();
+    this.setState(
+      {
+        fetchMode: "favorite",
+        selectedCat: null,
+        typedCatVal: null,
+        zip: null,
+        zipFinal: null,
+        distanceMiles: DISTANCE_DEFAULT,
+        distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT)
+      },
+      this.fetchResults.bind(this, 0)
+    );
+    return false;
+  }
+
+  convertBizIdResponseRecs (resObj): Object {
+    const recs: Array = Object.values(resObj);
+    const data: Object = {
+      search: {
+        total: recs.length,
+        business: recs
+      }
+    }
+    return data;
+  }
+
+  renderLinkFavorites (): Object {
+    return (
+      <div>
+        <a
+            href="#"
+            onClick={this.handleClickShowFavorites.bind(this)}>
+          Show All Favorites
+        </a>
+      </div>
     );
   }
 
@@ -396,6 +785,7 @@ class App extends React.Component {
         {this.renderInputZipcode()}
         {this.renderInputCategories()}
         {this.renderInputSubmit()}
+        {this.renderLinkFavorites()}
       </form>
     );
   }
@@ -427,7 +817,10 @@ class App extends React.Component {
   }
 
   render (): Object {
-    if (this.state.catTrie === null) {
+    if (
+      (this.state.catTrie === null) &&
+        (this.state.favorites !== null)
+    ) {
       return this.renderLoading();
     }
     return this.renderReady();
