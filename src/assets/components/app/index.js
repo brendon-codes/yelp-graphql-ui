@@ -10,7 +10,7 @@ import Autosuggest from "react-autosuggest";
 import TrieSearch from "trie-search";
 import Dexie from "dexie";
 
-import config from "./config";
+import AppStyle from "./app.scss";
 
 const BIZ_SEARCH_LIMIT: number = 10;
 const CAT_SEARCH_LIMIT: number = 10;
@@ -21,8 +21,14 @@ const DISTANCE_DEFAULT: number = 1;
 const GQL_CLIENT: Lokka = (
   new Lokka({
     transport: new LokkaTransport("/graphql", {
+      //
+      // We do not set the Authorization header here
+      // which contains the Yelp token.
+      // Instead, we proxy through our own server,
+      // which sets the Authorization header.
+      // This way, we do not leak keys to clients.
+      //
       headers: {
-        "Authorization": ["Bearer", config.YELP_TOKEN].join(" "),
         "Content-Type": "application/json",
         "Accept-Language": "en_US"
       }
@@ -46,8 +52,32 @@ class App extends React.Component {
 
   buildDefaultState (): Object {
     return {
-      // This should either be "search" or "favorite"
+      //
+      // Loading status of business results.
+      // This can apply to both favorites and search.
+      // Possible values:
+      //
+      // - "ready"
+      // - "loading"
+      //
+      resultsStatus: "ready",
+      //
+      // Type of business fetch to be done.
+      // Possible values:
+      //
+      // - "search"
+      // - "favorite"
+      // - null
+      //
       fetchMode: null,
+      //
+      // Status of geo loader
+      // Possible values:
+      //
+      // - waiting
+      // - ready
+      //
+      geoStatus: "waiting",
       offset: 0,
       favorites: null,
       catTrie: null,
@@ -153,23 +183,26 @@ class App extends React.Component {
 
   renderInputCategories (): Object {
     return (
-      <Autosuggest
-          suggestions={this.state.suggestedCats}
-          onSuggestionsFetchRequested={
-            this.handleSuggCatsFetchRequested.bind(this)
-          }
-          onSuggestionsClearRequested={
-            this.handleSuggCatsClearRequested.bind(this)
-          }
-          onSuggestionSelected={this.handleSuggCatSelected.bind(this)}
-          getSuggestionValue={this.getSuggCatValue.bind(this)}
-          renderSuggestion={this.renderSuggCat.bind(this)}
-          inputProps={{
-            placeholder: "Search Categories",
-            value: this.getSuggCatValue(),
-            onChange: this.handleSuggCatChange.bind(this)
-          }}
-        />
+      <div className="form-group mr-2">
+        <Autosuggest
+            suggestions={this.state.suggestedCats}
+            onSuggestionsFetchRequested={
+              this.handleSuggCatsFetchRequested.bind(this)
+            }
+            onSuggestionsClearRequested={
+              this.handleSuggCatsClearRequested.bind(this)
+            }
+            onSuggestionSelected={this.handleSuggCatSelected.bind(this)}
+            getSuggestionValue={this.getSuggCatValue.bind(this)}
+            renderSuggestion={this.renderSuggCat.bind(this)}
+            inputProps={{
+              className: "form-control",
+              placeholder: "Optional Category",
+              value: this.getSuggCatValue(),
+              onChange: this.handleSuggCatChange.bind(this)
+            }}
+          />
+      </div>
     );
   }
 
@@ -191,11 +224,48 @@ class App extends React.Component {
         };
       })
       .then(obj => {
-        this.setState({
-          favorites: this.preProcessFavorites(obj.favorites),
-          catTrie: this.preProcessCategories(obj.categories)
-        })
+        this.setState(
+          {
+            favorites: this.preProcessFavorites(obj.favorites),
+            catTrie: this.preProcessCategories(obj.categories)
+          },
+          this.loadInitGeoData.bind(this)
+        )
       });
+    return true;
+  }
+
+  enableGeoReady (zipCode: ?String=null) {
+    this.setState(
+      {
+        geoStatus: "ready",
+        zipFinal: zipCode,
+        zip: zipCode
+      },
+      this.fetchResults.bind(this, "search", 0)
+    );
+    return true;
+  }
+
+  loadInitGeoData (): boolean {
+    this.enableGeoReady("90402");
+    return true;
+
+    if(!navigator.geolocation) {
+      this.enableGeoReady();
+      return false;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log(position);
+        this.enableGeoReady();
+        return true;
+      },
+      () => {
+        this.enableGeoReady();
+        return true;
+      }
+    );
     return true;
   }
 
@@ -236,7 +306,7 @@ class App extends React.Component {
         alias: cat.alias
       };
     };
-    const ts = (
+    const ts: TrieSearch = (
       new TrieSearch(
         "clean",
         {
@@ -246,24 +316,92 @@ class App extends React.Component {
         }
       )
     );
-    for (let i in cats) {
-      if (!cats.hasOwnProperty(i)) {
-        continue;
-      }
-      const cat = cats[i];
-      const newCat: Object = buildCat(cat);
-      ts.add(newCat);
-    }
+    const builtCats: Array = cats.map(buildCat.bind(this));
+    ts.addAll(builtCats);
     return ts;
   }
 
-  renderBusinesses (): Object {
-    if (this.state.businessRecs === null) {
-      return (
-        <div>
-          Use the search form to find businesses near you.
+  renderLoading (): Object {
+    return (
+      <div className="row pt-5">
+        <div className="col text-center">
+          <span className="fa fa-refresh fa-spin fa-3x fa-fw"></span>
         </div>
-      );
+      </div>
+    );
+  }
+
+  renderWaitingForAction (): Object {
+    return (
+      <div className="row pt-5">
+        <div className="col font-italic text-center">
+          Search for businesses and activities in your area!
+        </div>
+      </div>
+    );
+  }
+
+  renderBusinessSection (): Object {
+    //
+    // A user operation is currently in progress
+    //
+    if (this.state.resultsStatus === "loading") {
+      return this.renderLoading();
+    }
+    //
+    // No business results are currently available
+    // and no user operation is currently in progress
+    //
+    if (this.state.businessRecs === null) {
+      return this.renderWaitingForAction();
+    }
+    //
+    // We have received a response on request for
+    // businesses, but no records exist
+    //
+    if (this.state.businessRecs.length === 0) {
+      return this.renderResultsEmpty();
+    }
+    //
+    // We have business records available to show
+    //
+    return this.renderBusinessesReady();
+  }
+
+  renderBusinessesReady (): Object {
+    return (
+      <div>
+        {this.renderPagerText()}
+        {this.renderPagerNav()}
+        {this.renderResultsTable()}
+      </div>
+    );
+  }
+
+  renderResultsEmpty (): Object {
+    const resultLabel: String = this.getFetchModeText();
+    return (
+      <div className="row pt-5">
+        <div className="col font-italic text-center">
+          No {resultLabel} are available.
+        </div>
+      </div>
+    );
+  }
+
+  renderResultsTable (): Object {
+    return (
+      <table>
+        <tbody>
+          {this.state.businessRecs.map(this.renderBusinessRec.bind(this))}
+        </tbody>
+      </table>
+    );
+  }
+
+  renderPagerNav (): Object {
+    if (this.state.fetchMode !== "search") {
+      return [];
     }
     const [ showPrev: boolean, showNext: boolean ] = this.getPageLinkInfo();
     const optsPrev: Object = (
@@ -282,28 +420,38 @@ class App extends React.Component {
         } :
         {}
     );
+    return (
+      <div>
+        <a {...optsPrev}>Prev</a>{" "}
+        <a {...optsNext}>Next</a>
+      </div>
+    );
+  }
+
+  getFetchModeText (): String {
+    if (this.state.fetchMode === "search") {
+      return "search results";
+    }
+    if (this.state.fetchMode === "favorite") {
+      return "favorites";
+    }
+    this.setAppFatal();
+    return "";
+  }
+
+  renderPagerText (): Object {
+    const resultLabel: String = this.getFetchModeText();
     const start: number = this.state.offset;
     const end: number = this.state.offset + this.state.businessRecs.length;
     return (
       <div>
-        <div>
-          Displaying{" "}
-          <strong>{start}</strong>{" "}
-          <span dangerouslySetInnerHTML={{__html: "&mdash;"}} />{" "}
-          <strong>{end}</strong>{" "}
-          of{" "}
-          <strong>{this.state.businessCountTotal}</strong>{" "}
-          results.
-        </div>
-        <div>
-          <a {...optsPrev}>Prev</a>{" "}
-          <a {...optsNext}>Next</a>
-        </div>
-        <table>
-          <tbody>
-            {this.state.businessRecs.map(this.renderBusinessRec.bind(this))}
-          </tbody>
-        </table>
+        Displaying{" "}
+        <strong>{start}</strong>{" "}
+        <span dangerouslySetInnerHTML={{__html: "&mdash;"}} />{" "}
+        <strong>{end}</strong>{" "}
+        of{" "}
+        <strong>{this.state.businessCountTotal}</strong>{" "}
+        {resultLabel}.
       </div>
     );
   }
@@ -311,7 +459,7 @@ class App extends React.Component {
   pageResults (pageCount: number, event: Object): boolean {
     event.preventDefault();
     const offset: number = this.getPageOffset(pageCount);
-    this.fetchResults(offset);
+    this.fetchResultsForCurrentMode(offset);
     return false;
   }
 
@@ -460,10 +608,11 @@ class App extends React.Component {
         this.state.zip
     );
     return (
-      <div>
+      <div className="form-group mr-2">
         <input
+           className="form-control"
            onChange={this.handleChangeZip.bind(this)}
-           placeholder="5 Digit Zip"
+           placeholder="Zip Code"
            type="text"
            value={zipVal} />
       </div>
@@ -491,8 +640,11 @@ class App extends React.Component {
     const val: number = this.state.distanceMiles;
     const nums: Array = this.range(1, DISTANCE_MAX_MILES + 1);
     return (
-      <div>
+      <div className="form-group mr-2">
+        <label className="mr-1" htmlFor="inp_distance">Miles:</label>
         <select
+            id="inp_distance"
+            className="form-control"
             value={val}
             onChange={this.handleChangeDistance.bind(this)}>
           {nums.map(num =>
@@ -507,15 +659,7 @@ class App extends React.Component {
     return Array.from({length: (end - start)}, (v, k) => k + start);
   }
 
-  renderLoading (): Object {
-    return (
-      <div>
-        Loading...
-      </div>
-    );
-  }
-
-  fetchSearchResults (): boolean {
+  fetchSearchResults (offset: number): boolean {
     const varCat: ?String = (
       (this.state.selectedCat === null) ?
         null :
@@ -524,7 +668,7 @@ class App extends React.Component {
     const queryObj: Object = (
       this.buildQueryBizSearch(
         BIZ_SEARCH_LIMIT,
-        this.state.offset,
+        offset,
         this.state.zip,
         this.state.distanceMeters,
         varCat
@@ -534,6 +678,9 @@ class App extends React.Component {
       .send(queryObj.query, queryObj.variables)
       .then((data) => {
         this.setState({
+          fetchMode: "search",
+          resultsStatus: "ready",
+          offset: offset,
           businessCountTotal: data.search.total,
           businessRecs: data.search.business
         });
@@ -543,12 +690,7 @@ class App extends React.Component {
 
   handleSubmitForm (event: Object): boolean {
     event.preventDefault();
-    this.setState(
-      {
-        fetchMode: "search"
-      },
-      this.fetchResults.bind(this, 0)
-    );
+    this.fetchResults("search", 0)
     return false;
   }
 
@@ -616,15 +758,14 @@ class App extends React.Component {
       query: query,
       variables: variables
     };
-    console.log(query);
-    console.log(variables);
+    //console.log(query);
+    //console.log(variables);
     return res;
   }
 
-  buildQueryBizFavs (limit: number, offset: number, bizIds: Array) {
-    const slicedBizIds: Array = bizIds.slice(offset, limit);
+  buildQueryBizFavs (bizIds: Array) {
     const queryArgs: String = (
-      slicedBizIds
+      bizIds
         .map((bizId: String, idx: number) => {
           return (
             `$id${idx}: String!`
@@ -633,7 +774,7 @@ class App extends React.Component {
         .join(", ")
     )
     const bizObjs: String = (
-      slicedBizIds
+      bizIds
         .map((bizId: String, idx: number) => {
           return (
             `
@@ -656,7 +797,7 @@ class App extends React.Component {
     );
     const variables: Object = (
       this.arrayToObject (
-        slicedBizIds
+        bizIds
           .map((bizId: String, idx: number) => {
             return [
               `id${idx}`,
@@ -687,20 +828,48 @@ class App extends React.Component {
   }
 
   fetchFavResults (): boolean {
+    if (this.state.favorites.size === 0) {
+      this.setState({
+        fetchMode: "favorite",
+        resultsStatus: "ready",
+        selectedCat: null,
+        typedCatVal: null,
+        zip: null,
+        zipFinal: null,
+        distanceMiles: DISTANCE_DEFAULT,
+        distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT),
+        offset: 0,
+        businessCountTotal: 0,
+        businessRecs: []
+      });
+      return true;
+    }
     const queryObj: Object = (
       this.buildQueryBizFavs(
-        BIZ_SEARCH_LIMIT,
-        this.state.offset,
         this.exportFavorites()
       )
     );
     GQL_CLIENT
       .send(queryObj.query, queryObj.variables)
-    // Add this step to normalize the response data
-    // so it is the same as our search response data
-      .then(this.convertBizIdResponseRecs.bind(this))
+      // Add this step to normalize the response data
+      // so it is the same as our search response data
+      .then(
+        this.convertBizIdResponseRecs.bind(
+          this,
+          this.state.favorites.size
+        )
+      )
       .then((data) => {
         this.setState({
+          fetchMode: "favorite",
+          resultsStatus: "ready",
+          selectedCat: null,
+          typedCatVal: null,
+          zip: null,
+          zipFinal: null,
+          distanceMiles: DISTANCE_DEFAULT,
+          distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT),
+          offset: 0,
           businessCountTotal: data.search.total,
           businessRecs: data.search.business
         });
@@ -708,24 +877,29 @@ class App extends React.Component {
     return true;
   }
 
-  fetchResults (offset: number): boolean {
+  fetchResultsForCurrentMode (offset: number): boolean {
+    return this.fetchResults(this.state.fetchMode, offset);
+  }
+
+  fetchResults (fetchMode: String, offset: number): boolean {
     this.setState(
       {
-        offset: offset
+        resultsStatus: "loading"
       },
       () => {
-        if (this.state.fetchMode === "search") {
-          this.fetchSearchResults();
+        if (fetchMode === "search") {
+          this.fetchSearchResults(offset);
           return true;
         }
-        if (this.state.fetchMode === "favorite") {
+        if (fetchMode === "favorite") {
           this.fetchFavResults();
           return true;
         }
         this.setAppFatal();
+        return false;
       }
-    );
-    return true;
+    )
+    return false;
   }
 
   setAppFatal (msg): boolean {
@@ -734,26 +908,15 @@ class App extends React.Component {
 
   handleClickShowFavorites (event: Object): boolean {
     event.preventDefault();
-    this.setState(
-      {
-        fetchMode: "favorite",
-        selectedCat: null,
-        typedCatVal: null,
-        zip: null,
-        zipFinal: null,
-        distanceMiles: DISTANCE_DEFAULT,
-        distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT)
-      },
-      this.fetchResults.bind(this, 0)
-    );
+    this.fetchResults("favorite", 0)
     return false;
   }
 
-  convertBizIdResponseRecs (resObj): Object {
+  convertBizIdResponseRecs (totalCount: number, resObj): Object {
     const recs: Array = Object.values(resObj);
     const data: Object = {
       search: {
-        total: recs.length,
+        total: totalCount,
         business: recs
       }
     }
@@ -762,25 +925,33 @@ class App extends React.Component {
 
   renderLinkFavorites (): Object {
     return (
-      <div>
-        <a
-            href="#"
+      <div className="form-group ml-5">
+        <button
+            className="btn btn-success"
             onClick={this.handleClickShowFavorites.bind(this)}>
           Show All Favorites
-        </a>
+        </button>
       </div>
     );
+  }
+
+  handleNoop (event: Object): boolean {
+    event.preventDefault();
+    return false;
   }
 
   renderInputs (): Object {
     const isDisabled: boolean = this.isFormDisabled();
     const submitter: ?Function = (
       isDisabled ?
-        (() => false) :
+        this.handleNoop.bind(this) :
         this.handleSubmitForm.bind(this)
     );
     return (
-      <form onSubmit={submitter}>
+      <form
+          id="search_bar"
+          className="form-inline justify-content-center pt-3 pb-3"
+          onSubmit={submitter}>
         {this.renderInputDistance()}
         {this.renderInputZipcode()}
         {this.renderInputCategories()}
@@ -793,8 +964,13 @@ class App extends React.Component {
   renderInputSubmit (): Object {
     const isDisabled: boolean = this.isFormDisabled();
     return (
-      <div>
-        <button type="submit" disabled={isDisabled}>Search</button>
+      <div className="form-group">
+        <button
+            className="btn btn-primary"
+            type="submit"
+            disabled={isDisabled}>
+          Search
+        </button>
       </div>
     );
   }
@@ -802,25 +978,47 @@ class App extends React.Component {
   renderResults (): Object {
     return (
       <div>
-        {this.renderBusinesses()}
+        {this.renderBusinessSection()}
       </div>
     );
   }
 
   renderReady (): Object {
     return (
-      <div>
+      <main>
         {this.renderInputs()}
         {this.renderResults()}
-      </div>
+      </main>
+    );
+  }
+
+  renderHeader (): Object {
+    return (
+      <header className="pt-5 pb-5 text-center">
+        <h1>Yelp Business Search</h1>
+      </header>
     );
   }
 
   render (): Object {
-    if (
-      (this.state.catTrie === null) &&
-        (this.state.favorites !== null)
-    ) {
+    return (
+      <div className="container" data-component="app">
+        {this.renderHeader()}
+        {this.renderMain()}
+      </div>
+    );
+  }
+
+  checkAppIsReady (): boolean {
+    return (
+      (this.state.catTrie !== null) &&
+        (this.state.favorites !== null) &&
+        (this.state.geoStatus === "ready")
+    );
+  }
+
+  renderMain (): Object {
+    if (!this.checkAppIsReady()) {
       return this.renderLoading();
     }
     return this.renderReady();

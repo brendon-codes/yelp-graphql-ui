@@ -1,0 +1,30 @@
+
+@import "../../style/bootstrap/load-helpers.scss";
+
+
+div[data-component="app"] {
+
+  @import "./autosuggest.scss";
+
+  header {
+    background-color: #818182;
+    color: #FFFFFF;
+
+    h1 {
+      text-transform: uppercase;
+    }
+  }
+
+  main {
+    form#search_bar {
+      background-color: #DDDDDD;
+    }
+
+    span.star-selected {
+      color: #FF0000;
+      -webkit-text-stroke-width: 1px;
+      -webkit-text-stroke-color: #000000;
+    }
+  }
+
+}

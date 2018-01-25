@@ -42,7 +42,9 @@ RUN add-apt-repository ppa:nginx/stable;
 RUN apt-get update;
 RUN apt-get install -y nginx;
 RUN rm -f /etc/nginx/sites-available/default;
+RUN mkdir /etc/nginx/inc;
 COPY sysconfigs/local/local/etc/nginx/sites-available/default /etc/nginx/sites-available/default
+COPY sysconfigs/local/local/etc/nginx/inc/yelp-key.conf /etc/nginx/inc/yelp-key.conf
 
 ##
 ## Node
