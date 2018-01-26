@@ -6,16 +6,20 @@ import React from "react";
 import { Lokka } from "lokka";
 import { Transport as LokkaTransport } from "lokka-transport-http";
 
+import Fontawesome from "font-awesome/scss/font-awesome.scss";
 import Autosuggest from "react-autosuggest";
 import TrieSearch from "trie-search";
 import Dexie from "dexie";
 
 import AppStyle from "./app.scss";
 
-const BIZ_SEARCH_LIMIT: number = 10;
+const BIZ_SEARCH_LIMIT: number = 20;
+const BIZ_DISPLAY_LIMIT: number = 20;
 const CAT_SEARCH_LIMIT: number = 10;
 const CAT_CLEAN_RE: RegExp = new RegExp("[^A-Za-z0-9]+", "g");
-const DISTANCE_MAX_MILES: number = 25;
+const DISTANCE_MILES_MAX: number = 25;
+const DISTANCE_METERS_MAX: number = 40000;
+const DISTANCE_METERS_PER_MILE: number = 1609.344;
 const DISTANCE_DEFAULT: number = 1;
 
 const GQL_CLIENT: Lokka = (
@@ -74,16 +78,34 @@ class App extends React.Component {
       // Status of geo loader
       // Possible values:
       //
-      // - waiting
-      // - ready
+      // - "waiting"
+      // - "ready"
       //
       geoStatus: "waiting",
+      //
+      // This is the field which is being sorted on.
+      // Possible values:
+      //
+      // - "distance"
+      // - "name"
+      // - "location"
+      // - "favorite"
+      //
+      sortField: "distance",
+      //
+      // This is the sort direction of the sorted field.
+      // Possible values:
+      //
+      // - "asc"
+      // - "desc"
+      //
+      sortDir: "asc",
       offset: 0,
       favorites: null,
       catTrie: null,
       suggestedCats: [],
-      selectedCat: null,
-      typedCatVal: null,
+      selectedCat: "restaurants",
+      typedCatVal: "Restaurants",
       zip: null,
       zipFinal: null,
       distanceMiles: DISTANCE_DEFAULT,
@@ -370,10 +392,18 @@ class App extends React.Component {
 
   renderBusinessesReady (): Object {
     return (
-      <div>
+      <div className="mt-3">
+        {this.renderPagerBox()}
+        {this.renderResultsTable()}
+      </div>
+    );
+  }
+
+  renderPagerBox (): Object {
+    return (
+      <div className="row mb-1 justify-content-between">
         {this.renderPagerText()}
         {this.renderPagerNav()}
-        {this.renderResultsTable()}
       </div>
     );
   }
@@ -389,9 +419,99 @@ class App extends React.Component {
     );
   }
 
+  handleClickRowHeadField (code, event: Object): boolean {
+    event.preventDefault();
+    const opts: Object = {
+      sortField: this.state.sortField,
+      sortDir: this.state.sortDir
+    };
+    if (this.state.sortField !== code) {
+      opts.sortField = code;
+    }
+    else {
+      opts.sortDir = (() => {
+        if (this.state.sortDir === "asc") {
+          return "desc";
+        }
+        if (this.state.sortDir === "desc") {
+          return "asc";
+        }
+        this.setAppFatal("Invalid sort direction.");
+        return "";
+      })();
+    }
+    opts.businessRecs = (
+      this.sortBizRecs(
+        this.state.businessRecs,
+        opts.sortField,
+        opts.sortDir
+      )
+    );
+    this.setState(opts);
+    return false;
+  }
+
+  renderRowHeadField (val: String, code: String): Object {
+    const iconClassName: Object = (() => {
+        if (this.state.sortDir === "asc") {
+          return "fa-chevron-up";
+        }
+        if (this.state.sortDir === "desc") {
+          return "fa-chevron-down";
+        }
+        this.setAppFatal("Invalid sort direction.");
+        return "";
+    })();
+    const selected: boolean = (this.state.sortField === code);
+    const linkClassName: String = (
+      selected ?
+        "sorter-select" :
+        "sorter-noselect"
+    );
+    const sortIcon: Object = (
+      selected ?
+      (
+        <span>
+          <span
+              className={this.buildClassNames(["fa", iconClassName])}></span>
+          &nbsp;
+        </span>
+      ) :
+      []
+    );
+    return (
+      <a
+          className={linkClassName}
+          href="#"
+          onClick={this.handleClickRowHeadField.bind(this, code)}>
+        {sortIcon}
+        <span>
+          {val}
+        </span>
+      </a>
+    );
+  }
+
   renderResultsTable (): Object {
     return (
       <table>
+        <thead>
+          <tr className="text-uppercase font-weight-bold">
+            <th>&nbsp;</th>
+            <th>
+              {this.renderRowHeadField("Name", "name")}
+            </th>
+            <th>
+              {this.renderRowHeadField("Location", "location")}
+            </th>
+            <th className="text-center">
+              {this.renderRowHeadField("Miles", "distance")}
+            </th>
+            <th className="text-center">
+              {this.renderRowHeadField("Favorite", "favorite")}
+            </th>
+          </tr>
+        </thead>
         <tbody>
           {this.state.businessRecs.map(this.renderBusinessRec.bind(this))}
         </tbody>
@@ -421,8 +541,9 @@ class App extends React.Component {
         {}
     );
     return (
-      <div>
-        <a {...optsPrev}>Prev</a>{" "}
+      <div className="col text-right text-uppercase font-weight-bold">
+        <a {...optsPrev}>Previous</a>
+        &nbsp;&nbsp;<span className="pager-sep">|</span>&nbsp;&nbsp;
         <a {...optsNext}>Next</a>
       </div>
     );
@@ -444,14 +565,14 @@ class App extends React.Component {
     const start: number = this.state.offset;
     const end: number = this.state.offset + this.state.businessRecs.length;
     return (
-      <div>
+      <div className="col font-italic">
         Displaying{" "}
         <strong>{start}</strong>{" "}
-        <span dangerouslySetInnerHTML={{__html: "&mdash;"}} />{" "}
+        &mdash;{" "}
         <strong>{end}</strong>{" "}
         of{" "}
         <strong>{this.state.businessCountTotal}</strong>{" "}
-        {resultLabel}.
+        {resultLabel}
       </div>
     );
   }
@@ -469,14 +590,14 @@ class App extends React.Component {
     const totalIsNull: boolean = (bizTotal === null);
     const showPrev: boolean = (!totalIsNull && (offset > 0));
     const showNext: boolean = (
-      (!totalIsNull && ((offset + BIZ_SEARCH_LIMIT) <= bizTotal))
+      (!totalIsNull && ((offset + BIZ_DISPLAY_LIMIT) <= bizTotal))
     );
     //debugger;
     return [showPrev, showNext];
   }
 
   getPageOffset (pageCount: number): Object {
-    const incVal: number = BIZ_SEARCH_LIMIT * pageCount;
+    const incVal: number = BIZ_DISPLAY_LIMIT * pageCount;
     const checkOffset: number = this.state.offset + incVal;
     const totalIsNull: boolean = (this.state.businessCountTotal === null);
     const offset: number = (() => {
@@ -562,18 +683,57 @@ class App extends React.Component {
     const selected: boolean = this.doesBizHavFav(biz.id);
     const classes: Array = (
       selected ?
-        ["fa", "fa-star", "star-selected"] :
-        ["fa", "fa-star-o"]
+        ["fa", "fa-heart", "heart-select"] :
+        ["fa", "fa-heart", "heart-noselect"]
     )
+    const photoUrl: ?String = (
+      (biz.photos.length > 0) ?
+        biz.photos[0] :
+        null
+    );
+    const photo: Object = (
+      (photoUrl !== null) ?
+        (
+          <img className="logo" src={photoUrl} />
+        ) :
+        []
+    );
+    const loc: Array = [];
+    if (biz.location.hasOwnProperty("city") && (biz.location.city !== null)) {
+      loc.push(biz.location.city);
+    }
+    if (
+      biz.location.hasOwnProperty("zip_code") &&
+       (biz.location.zip_code !== null)
+    ) {
+      loc.push(biz.location.zip_code);
+    }
+    const locStr: String = (
+      (loc.length > 0) ?
+        loc.join(", ") :
+        " "
+    );
+    const milesStr: String = (
+      (biz.hasOwnProperty("distance") && (biz.distance !== null)) ?
+        this.convertMetersToMiles(biz.distance).toString() :
+        " "
+    );
     return (
       <tr key={biz.id}>
         <td>
+          {photo}
+        </td>
+        <td>
+          <a href={biz.url}>{biz.name}</a>
+        </td>
+        <td>{locStr}</td>
+        <td className="text-center">{milesStr}</td>
+        <td className="text-center">
           <span
               onClick={this.handleClickFav.bind(this, biz.id)}
               className={this.buildClassNames(classes)}>
           </span>
         </td>
-        <td>{biz.name}</td>
       </tr>
     );
   }
@@ -619,11 +779,20 @@ class App extends React.Component {
     );
   }
 
-  convertMilesToMeters (miles: number): number {
-    if (miles >= DISTANCE_MAX_MILES) {
-      return 40000;
+  convertMetersToMiles (meters: number): number {
+    if (meters >= DISTANCE_METERS_MAX) {
+      return DISTANCE_MILES_MAX;
     }
-    return (miles * 1609.344);
+    return (
+      parseFloat((meters / DISTANCE_METERS_PER_MILE).toFixed(1))
+    );
+  }
+
+  convertMilesToMeters (miles: number): number {
+    if (miles >= DISTANCE_MILES_MAX) {
+      return DISTANCE_METERS_MAX;
+    }
+    return (miles * DISTANCE_METERS_PER_MILE);
   }
 
   handleChangeDistance (event): boolean {
@@ -638,7 +807,7 @@ class App extends React.Component {
 
   renderInputDistance (): Object {
     const val: number = this.state.distanceMiles;
-    const nums: Array = this.range(1, DISTANCE_MAX_MILES + 1);
+    const nums: Array = this.range(1, DISTANCE_MILES_MAX + 1);
     return (
       <div className="form-group mr-2">
         <label className="mr-1" htmlFor="inp_distance">Miles:</label>
@@ -682,10 +851,75 @@ class App extends React.Component {
           resultsStatus: "ready",
           offset: offset,
           businessCountTotal: data.search.total,
-          businessRecs: data.search.business
+          businessRecs: this.sortBizRecsFromState(data.search.business)
         });
       })
     return true;
+  }
+
+  sortBizRecsFromState (bizRecs: Array): Array {
+    return this.sortBizRecs(bizRecs, this.state.sortField, this.state.sortDir);
+  }
+
+  sortBizRecs (bizRecs: Array, sortField: String, sortDir: String): Array {
+    const checkDir: Function = (condition): boolean => {
+      const [dirYes: number, dirNo: number] = (() => {
+        if (sortDir === "asc") {
+          return [-1, +1];
+        }
+        if (sortDir === "desc") {
+          return [+1, -1];
+        }
+        this.setAppFatal("Invalid sort direction");
+        return -1;
+      })();
+      const ret: number = (condition ? dirYes : dirNo);
+      return ret;
+    };
+    const sorter: Function = (recA: Object, recB: Object) => {
+      //
+      // Sort Field: Distance
+      //
+      if (sortField === "distance") {
+        return checkDir(recA.distance < recB.distance);
+      }
+      //
+      // Sort Field: Name
+      //
+      if (sortField === "name") {
+        return checkDir(recA.name < recB.name);
+      }
+      //
+      // Sort Field: Location
+      //
+      if (sortField === "location") {
+        return (
+          checkDir(
+            [
+              recA.location.city,
+              recA.location.zip_code
+            ] <
+              [
+                recB.location.city,
+                recB.location.zip_code
+              ]
+          )
+        );
+      }
+      //
+      // Sort Field: Favorite
+      //
+      if (sortField === "favorite") {
+        return checkDir(this.isFavorite(recA.id), this.isFavorite(recB.id));
+      }
+      //
+      // Default
+      //
+      this.setAppFatal("Invalid sort field");
+      return -1;
+    };
+    const outRecs: Array = bizRecs.sort(sorter.bind(this));
+    return outRecs;
   }
 
   handleSubmitForm (event: Object): boolean {
@@ -702,7 +936,9 @@ class App extends React.Component {
           name
           url
           distance
+          photos
           location {
+            city
             zip_code
           }
           categories {
@@ -718,8 +954,8 @@ class App extends React.Component {
     limit: number,
     offset: number,
     zipCode: String,
-    distance: number,
-    category: ?String
+    radius: number,
+    category: ?String=null
   ) {
     const query: String = (
       `
@@ -729,14 +965,14 @@ class App extends React.Component {
           $limit: Int!,
           $offset: Int!,
           $zip_code: String!,
-          $distance: Float!,
+          $radius: Float!,
           $categories: String
         ) {
           search(
             limit: $limit,
             offset: $offset,
             location: $zip_code,
-            radius: $distance,
+            radius: $radius,
             categories: $categories
           ) {
             total
@@ -751,15 +987,15 @@ class App extends React.Component {
       limit: limit,
       offset: offset,
       zip_code: zipCode,
-      distance: distance,
+      radius: radius,
       categories: category
     };
     const res: Object = {
       query: query,
       variables: variables
     };
-    //console.log(query);
-    //console.log(variables);
+    console.log(query);
+    console.log(variables);
     return res;
   }
 
@@ -995,7 +1231,11 @@ class App extends React.Component {
   renderHeader (): Object {
     return (
       <header className="pt-5 pb-5 text-center">
-        <h1>Yelp Business Search</h1>
+        <h1 className="text-uppercase mb-0">Yelp Business Search</h1>
+        <h2 className="text-uppercase">
+          By{" "}
+          <a href="mailto:brendon@aphex.io">Brendon Crawford</a>
+        </h2>
       </header>
     );
   }

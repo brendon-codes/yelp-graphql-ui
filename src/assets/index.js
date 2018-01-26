@@ -4,9 +4,6 @@
 import React from "react";
 import ReactDom from "react-dom";
 
-import Fontawesome from "font-awesome/scss/font-awesome.scss";
-import BootstrapLoader from "./style/bootstrap/load-all.scss"
-
 import App from "./components/app";
 
 
