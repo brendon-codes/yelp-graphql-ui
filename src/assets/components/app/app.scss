@@ -1,5 +1,12 @@
 
-@import "../../style/bootstrap/load-helpers.scss";
+//
+// We load bootstrap from here instead of
+// from within a webpack import, so that
+// we can easily reference variables, functions,
+// and mixins.  This can be done when doing
+// webpack imports, but not quite as simply/easily.
+//
+@import "../../style/bootstrap/loader.scss";
 
 
 div[data-component="app"] {
@@ -7,23 +14,84 @@ div[data-component="app"] {
   @import "./autosuggest.scss";
 
   header {
-    background-color: #818182;
-    color: #FFFFFF;
+    background-color: $gray-blue-dark;
+    color: $white;
 
     h1 {
       text-transform: uppercase;
+
+    }
+
+    h2 {
+      a:hover {
+        color: $blue;
+      }
     }
   }
 
   main {
     form#search_bar {
-      background-color: #DDDDDD;
+      background-color: $cyan;
     }
 
-    span.star-selected {
-      color: #FF0000;
+    span.fa-heart {
       -webkit-text-stroke-width: 1px;
-      -webkit-text-stroke-color: #000000;
+      -webkit-text-stroke-color: $gray-600;
+      text-stroke-width: 1px;
+      text-stroke-color: $gray-600;
+      font-size: 1.8rem;
+
+      &.heart-noselect {
+        color: $gray-200;
+      }
+
+      &.heart-select {
+        color: $red;
+      }
+    }
+
+    span.pager-sep {
+      color: $gray-400;
+    }
+
+    table {
+      width: 100%;
+
+      thead {
+        tr {
+          background-color: #87bCDE;
+          color: $white;
+
+          th {
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+
+            a {
+              color: $white;
+            }
+          }
+        }
+      }
+
+      tbody {
+        tr {
+          td {
+            padding-top: .5rem;
+            padding-bottom: .5rem;
+          }
+
+          &:nth-child(even) {
+            background-color: $gray-100;
+          }
+        }
+      }
+
+      img.logo {
+        width: 80px;
+        height: 80px;
+        border-radius: 4px;
+        object-fit: cover;
+      }
     }
   }
 

@@ -61,4 +61,7 @@ EXPOSE 80
 ##
 ## Run Commands
 ##
-ENTRYPOINT /bin/bash
+ENTRYPOINT \
+  service nginx start && \
+  /bin/bash
+
