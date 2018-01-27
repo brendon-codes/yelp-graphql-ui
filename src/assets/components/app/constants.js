@@ -10,4 +10,5 @@ export const DISTANCE_METERS_MAX: number = 40000;
 export const DISTANCE_METERS_PER_MILE: number = 1609.344;
 export const DISTANCE_DEFAULT: number = 1;
 export const ZIP_DEFAULT: string = "90402";
+export const INITIAL_FETCH_MODE: string = "search";
 

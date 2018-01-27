@@ -31,6 +31,7 @@ import type {
   AppCat,
   AppCats,
   AppFav,
+  AppFavs,
   AppBizRec,
   AppBizRecs,
   AppProps,
@@ -46,7 +47,8 @@ import {
   DISTANCE_METERS_MAX,
   DISTANCE_METERS_PER_MILE,
   DISTANCE_DEFAULT,
-  ZIP_DEFAULT
+  ZIP_DEFAULT,
+  INITIAL_FETCH_MODE
 } from "./constants.js";
 
 import {
@@ -111,7 +113,7 @@ class App extends React.Component<AppProps, AppState> {
    */
   searchCategories (value: string): AppCats {
     const cleanVal: string = this.cleanCatTitle(value);
-    if (this.state.catTrie == null) {
+    if (this.state.catTrie === undefined || this.state.catTrie === null) {
       this.setAppFatal("catTrie must be set");
       return [];
     }
@@ -126,7 +128,7 @@ class App extends React.Component<AppProps, AppState> {
    * @return {boolean}
    */
   handleSuggCatsFetchRequested ({value}: {value: string}): boolean {
-    this.setState({
+    this.setStatePromise({
       suggestedCats: this.searchCategories(value)
     });
     return true;
@@ -139,7 +141,7 @@ class App extends React.Component<AppProps, AppState> {
    * @return {boolean}
    */
   handleSuggCatsClearRequested (): boolean {
-    this.setState({
+    this.setStatePromise({
       suggestedCats: []
     });
     return true;
@@ -180,7 +182,7 @@ class App extends React.Component<AppProps, AppState> {
    */
   findSingleCat (value: string): ?AppCat {
     const cleanVal: string = this.cleanCatTitle(value);
-    if (this.state.catTrie == null) {
+    if (this.state.catTrie === undefined || this.state.catTrie === null) {
       this.setAppFatal("catTrie must be set");
       return null;
     }
@@ -211,7 +213,7 @@ class App extends React.Component<AppProps, AppState> {
         null :
         newValue
     );
-    this.setState({
+    this.setStatePromise({
       typedCatVal: catVal,
       selectedCat: selectedCat
     });
@@ -236,7 +238,7 @@ class App extends React.Component<AppProps, AppState> {
       suggestion: AppCat
     }
   ): boolean {
-    this.setState({
+    this.setStatePromise({
       typedCatVal: suggestion.title,
       selectedCat: suggestion
     });
@@ -249,7 +251,10 @@ class App extends React.Component<AppProps, AppState> {
    * @return {string}
    */
   getSuggCatValue (): string {
-    if (this.state.typedCatVal == null) {
+    if (
+      this.state.typedCatVal === undefined ||
+        this.state.typedCatVal === null
+    ) {
       return "";
     }
     return this.state.typedCatVal;
@@ -292,43 +297,88 @@ class App extends React.Component<AppProps, AppState> {
    *
    * @return {boolean}
    */
-  componentWillMount (): boolean {
+  componentDidMount (): boolean {
     this.loadInitData();
     return true;
+  }
+
+  /**
+   * This loads the initial categories and favorites
+   * data, then calls fetchResults to populate business
+   * listings with some initial data.
+   *
+   * @return {Promise<boolean>}
+   */
+  loadInitData (): Promise<boolean> {
+    return (
+      this
+        .loadCatsAndFavs()
+        .then(this.fetchResults.bind(this, INITIAL_FETCH_MODE, 0))
+    );
   }
 
   /**
    * Loads initial data such as categories from the
    * Yelp REST api, and the favorites from IndexedDB
    *
+   * @param {boolean} shouldFetchResults
    * @return {boolean}
    */
-  loadInitData (): boolean {
-    const loaders: Array<Promise<any>> = [
+  loadCatsAndFavs (): Promise<boolean> {
+    const loaders: [Promise<AppCatsOrig>, Promise<AppFavs>] = [
       this.loadCategories(),
       this.loadFavorites()
     ];
-    Promise
-      .all(loaders)
-      .then(resGroups => {
-        return {
-          categories: resGroups[0],
-          favorites: resGroups[1]
-        };
-      })
-      .then(obj => {
-        this.setState(
-          {
-            favorites: this.preProcessFavorites(obj.favorites),
-            catTrie: this.preProcessCategories(obj.categories)
-          },
-          () => {
-            this.fetchResults("search", 0);
-            return true;
-          }
-        );
-      });
-    return true;
+    const res: Promise<boolean> = (
+      Promise
+        .all(loaders)
+        .then(resGroups => {
+          return {
+            categories: resGroups[0],
+            favorites: resGroups[1]
+          };
+        })
+        .then(obj => {
+          return (
+            this.setStatePromise(
+              {
+                favorites: this.preProcessFavorites(obj.favorites),
+                catTrie: this.preProcessCategories(obj.categories)
+              }
+            )
+              .then(() => true)
+          );
+        })
+    );
+    return res;
+  }
+
+  /**
+   * A wrapper for setState which returns
+   * a promise. This is mostly helpful for
+   * enzyme tests, since there are times
+   * when promises from network calls can resolve
+   * causing the component to unmount before setState
+   * is completed.
+   *
+   * @param {AppState} state - New state object
+   * @return {Promise<any>}
+   */
+  setStatePromise (state: AppState): Promise<any> {
+    return (
+      new Promise(
+        (resolve) => {
+          this.setState(
+            state,
+            () => {
+              resolve(true);
+              return true;
+            }
+          );
+          return true;
+        }
+      )
+    );
   }
 
   /**
@@ -347,18 +397,22 @@ class App extends React.Component<AppProps, AppState> {
    *
    * @return {Array<AppFav>} - Favorites records
    */
-  loadFavorites (): Promise<Array<AppFav>> {
+  loadFavorites (): Promise<AppFavs> {
     return (
       DB
         .favorites
         .toArray(favorites => favorites)
+        .catch((error) => {
+          this.setAppFatal("Cannot load favorites from DB", error);
+          return null;
+        })
     );
   }
 
   /**
    * Load categories from Yelp REST.
    *
-   * @return {Promise<AppCats, Error>} - Promise of categores Array
+   * @return {Promise<AppCatsOrig>} - Promise of categores Array
    */
   loadCategories (): Promise<AppCatsOrig> {
     return (
@@ -369,6 +423,10 @@ class App extends React.Component<AppProps, AppState> {
         }
       )
         .then(response => response.json())
+        .catch((error) => {
+          this.setAppFatal("Count not fetch cats", error);
+          return [];
+        })
     );
   }
 
@@ -459,7 +517,10 @@ class App extends React.Component<AppProps, AppState> {
     // No business results are currently available
     // and no user operation is currently in progress
     //
-    if (this.state.businessRecs == null) {
+    if (
+      this.state.businessRecs === undefined ||
+        this.state.businessRecs === null
+    ) {
       return this.renderWaitingForAction();
     }
     //
@@ -551,7 +612,10 @@ class App extends React.Component<AppProps, AppState> {
         return "";
       })();
     }
-    if (this.state.businessRecs == null) {
+    if (
+      this.state.businessRecs === undefined ||
+        this.state.businessRecs === null
+    ) {
       this.setAppFatal("businessRecs must be set");
       return false;
     }
@@ -562,7 +626,7 @@ class App extends React.Component<AppProps, AppState> {
         opts.sortDir
       )
     );
-    this.setState(opts);
+    this.setStatePromise(opts);
     return false;
   }
 
@@ -621,7 +685,10 @@ class App extends React.Component<AppProps, AppState> {
    * @return {ReactNode} - Element
    */
   renderResultsTable (): ReactNode {
-    if (this.state.businessRecs == null) {
+    if (
+      this.state.businessRecs === undefined ||
+        this.state.businessRecs === null
+    ) {
       this.setAppFatal("businessRecs should not be empty");
       return null;
     }
@@ -629,7 +696,7 @@ class App extends React.Component<AppProps, AppState> {
       this.state.businessRecs.map(this.renderBusinessRec.bind(this))
     );
     return (
-      <table>
+      <table id="res-table">
         <thead>
           <tr className="text-uppercase font-weight-bold">
             <th>&nbsp;</th>
@@ -712,16 +779,32 @@ class App extends React.Component<AppProps, AppState> {
    */
   renderPagerText (): ReactNode {
     const resultLabel: string = this.getFetchModeText();
-    if (this.state.offset == null) {
+    if (this.state.offset === undefined || this.state.offset === null) {
       this.setAppFatal("offset must be set");
       return null;
     }
     const start: number = this.state.offset;
-    if (this.state.businessRecs == null) {
+    if (
+      this.state.businessRecs === undefined ||
+        this.state.businessRecs === null
+    ) {
       this.setAppFatal("businessRecs must be set");
       return null;
     }
     const end: number = this.state.offset + this.state.businessRecs.length;
+    if (
+      this.state.businessCountTotal === undefined ||
+        this.state.businessCountTotal === null
+    ) {
+      this.setAppFatal("businessCountTotal must be set");
+      return null;
+    }
+    //
+    // Need to export this as string.  This was causing a bug in Enzyme
+    // when forceUpdate and update was called, while this was just a number
+    // instead of a string, it was causing the test to hang forever.
+    //
+    const bizCountTotalStr: string = this.state.businessCountTotal.toString();
     return (
       <div className="col font-italic">
         Displaying{" "}
@@ -729,7 +812,7 @@ class App extends React.Component<AppProps, AppState> {
         &mdash;{" "}
         <strong>{end}</strong>{" "}
         of{" "}
-        <strong>{this.state.businessCountTotal}</strong>{" "}
+        <strong>{bizCountTotalStr}</strong>{" "}
         {resultLabel}
       </div>
     );
@@ -755,7 +838,7 @@ class App extends React.Component<AppProps, AppState> {
    * @return {Array<boolean>} - Show previous, Show Next
    */
   getPageLinkInfo (): [boolean, boolean] {
-    if (this.state.offset == null) {
+    if (this.state.offset === undefined || this.state.offset === null) {
       this.setAppFatal("offset must be set");
       return [false, false];
     }
@@ -778,7 +861,7 @@ class App extends React.Component<AppProps, AppState> {
    * @return {number} - Offset value
    */
   getPageOffset (pageCount: number): number {
-    if (this.state.offset == null) {
+    if (this.state.offset === undefined || this.state.offset === null) {
       this.setAppFatal("offset must be set");
       return 0;
     }
@@ -789,7 +872,10 @@ class App extends React.Component<AppProps, AppState> {
       if (checkOffset <= 0) {
         return 0;
       }
-      if (this.state.businessCountTotal == null) {
+      if (
+        this.state.businessCountTotal === undefined ||
+          this.state.businessCountTotal === null
+      ) {
         return 0;
       }
       if (checkOffset > this.state.businessCountTotal) {
@@ -821,7 +907,10 @@ class App extends React.Component<AppProps, AppState> {
    * @return {boolean}
    */
   doesBizHavFav (bizId: string): boolean {
-    if (this.state.favorites == null) {
+    if (
+      this.state.favorites === undefined ||
+        this.state.favorites === null
+    ) {
       this.setAppFatal("favorites must be set");
       return false;
     }
@@ -840,8 +929,9 @@ class App extends React.Component<AppProps, AppState> {
    */
   isFavorite (bizId: string): boolean {
     return (
-      (this.state.favorites != null) &&
-        (this.state.favorites.has(bizId))
+      (this.state.favorites !== undefined) &&
+      (this.state.favorites !== null) &&
+        this.state.favorites.has(bizId)
     );
   }
 
@@ -858,6 +948,10 @@ class App extends React.Component<AppProps, AppState> {
       .equals(bizId)
       .limit(1)
       .delete()
+      .catch((error) => {
+        this.setAppFatal("Coult not delete by business id", error);
+        return null;
+      })
       .then(this.reloadFavorites.bind(this));
     return true;
   }
@@ -872,10 +966,11 @@ class App extends React.Component<AppProps, AppState> {
       this
         .loadFavorites()
         .then(favorites => {
-          this.setState({
-            favorites: this.preProcessFavorites(favorites)
-          });
-          return true;
+          return (
+            this.setStatePromise({
+              favorites: this.preProcessFavorites(favorites)
+            })
+          );
         })
     );
   }
@@ -891,6 +986,10 @@ class App extends React.Component<AppProps, AppState> {
       .favorites
       .put({
         "business_id": bizId
+      })
+      .catch((error) => {
+        this.setAppFatal("Could not update DB by biz id", error);
+        return null;
       })
       .then(this.reloadFavorites.bind(this));
     return true;
@@ -958,7 +1057,11 @@ class App extends React.Component<AppProps, AppState> {
         " "
     );
     const milesStr: string = (
-      (biz.hasOwnProperty("distance") && (biz.distance != null)) ?
+      (
+        biz.hasOwnProperty("distance") &&
+          (biz.distance !== undefined) &&
+          (biz.distance !== null)
+      ) ?
         this.convertMetersToMiles(biz.distance).toString() :
         " "
     );
@@ -995,7 +1098,7 @@ class App extends React.Component<AppProps, AppState> {
         event.target.value
     );
     const checkGood: RegExp = new RegExp("^[0-9]{1,5}(-[0-9]{0,4})?$");
-    if (val != null) {
+    if (val !== undefined && val !== null) {
       if (!val.match(checkGood)) {
         return true;
       }
@@ -1003,7 +1106,7 @@ class App extends React.Component<AppProps, AppState> {
     const checkFinal: RegExp = new RegExp("^[0-9]{5}(-[0-9]{4})?$");
     // Have to do this to make FlowType happy :(
     const zipFinal: ?string = ((): ?string => {
-      if (val == null) {
+      if (val === undefined || val === null) {
         return null;
       }
       return (
@@ -1012,7 +1115,7 @@ class App extends React.Component<AppProps, AppState> {
           val
       );
     })();
-    this.setState({
+    this.setStatePromise({
       zip: val,
       zipFinal: zipFinal
     });
@@ -1079,7 +1182,7 @@ class App extends React.Component<AppProps, AppState> {
   handleChangeDistance (event: ReactEvent): boolean {
     const miles: number = parseInt(event.target.value, 10);
     const meters: number = this.convertMilesToMeters(miles);
-    this.setState({
+    this.setStatePromise({
       distanceMiles: miles,
       distanceMeters: meters
     });
@@ -1092,7 +1195,10 @@ class App extends React.Component<AppProps, AppState> {
    * @return {ReactNode}
    */
   renderInputDistance (): ReactNode {
-    if (this.state.distanceMiles == null) {
+    if (
+      this.state.distanceMiles === undefined ||
+        this.state.distanceMiles === null
+    ) {
       this.setAppFatal("distanceMiles must be set");
       return null;
     }
@@ -1131,19 +1237,25 @@ class App extends React.Component<AppProps, AppState> {
    * @param {number} offset - Offset index to start at
    * @return {boolean}
    */
-  fetchSearchResults (offset: number): boolean {
+  fetchSearchResults (offset: number): Promise<boolean> {
     const varCat: ?string = (
-      (this.state.selectedCat == null) ?
+      (
+        this.state.selectedCat === undefined ||
+       this.state.selectedCat === null
+      ) ?
         null :
         this.state.selectedCat.alias
     );
-    if (this.state.zip == null) {
+    if (this.state.zip === undefined || this.state.zip === null) {
       this.setAppFatal("zip must be set");
-      return false;
+      return this.buildPromise(false);
     }
-    if (this.state.distanceMeters == null) {
+    if (
+      this.state.distanceMeters === undefined ||
+        this.state.distanceMeters === null
+    ) {
       this.setAppFatal("distanceMeters must be set");
-      return false;
+      return this.buildPromise(false);
     }
     const queryObj: AppQueryObj = (
       this.buildQueryBizSearch(
@@ -1154,18 +1266,26 @@ class App extends React.Component<AppProps, AppState> {
         varCat
       )
     );
-    GQL_CLIENT
-      .send(queryObj.query, queryObj.variables)
-      .then((data) => {
-        this.setState({
-          fetchMode: "search",
-          resultsStatus: "ready",
-          offset: offset,
-          businessCountTotal: data.search.total,
-          businessRecs: this.sortBizRecsFromState(data.search.business)
-        });
-      });
-    return true;
+    return (
+      GQL_CLIENT
+        .send(queryObj.query, queryObj.variables)
+        .catch((error) => {
+          this.setAppFatal("Could not send GQL query for search", error);
+          return false;
+        })
+        .then((data) => {
+          return (
+            this.setStatePromise({
+              fetchMode: "search",
+              resultsStatus: "ready",
+              offset: offset,
+              businessCountTotal: data.search.total,
+              businessRecs: this.sortBizRecsFromState(data.search.business)
+            })
+              .then(() => true)
+          );
+        })
+    );
   }
 
   /**
@@ -1175,11 +1295,11 @@ class App extends React.Component<AppProps, AppState> {
    * @return {AppBizRecs} - Sorted recs
    */
   sortBizRecsFromState (bizRecs: AppBizRecs): AppBizRecs {
-    if (this.state.sortField == null) {
+    if (this.state.sortField === undefined || this.state.sortField === null) {
       this.setAppFatal("sortField must be set");
       return [];
     }
-    if (this.state.sortDir == null) {
+    if (this.state.sortDir === undefined || this.state.sortDir === null) {
       this.setAppFatal("sortDir must be set");
       return [];
     }
@@ -1219,12 +1339,12 @@ class App extends React.Component<AppProps, AppState> {
       //
       if (sortField === "distance") {
         const recACompDist: number = (
-          (recA.distance == null) ?
+          (recA.distance === undefined || recA.distance === null) ?
             0 :
             recA.distance
         );
         const recBCompDist: number = (
-          (recB.distance == null) ?
+          (recB.distance === undefined || recB.distance === null) ?
             0 :
             recB.distance
         );
@@ -1449,7 +1569,7 @@ class App extends React.Component<AppProps, AppState> {
    * @return {Array<string>}
    */
   exportFavorites (): Array<string> {
-    if (this.state.favorites == null) {
+    if (this.state.favorites === undefined || this.state.favorites === null) {
       this.setAppFatal("favorites must be set");
       return [];
     }
@@ -1461,77 +1581,102 @@ class App extends React.Component<AppProps, AppState> {
    *
    * @return {boolean}
    */
-  fetchFavResults (): boolean {
-    if (this.state.favorites == null) {
+  fetchFavResults (): Promise<boolean> {
+    if (this.state.favorites === undefined || this.state.favorites === null) {
       this.setAppFatal("favorites must be set");
-      return false;
+      return this.buildPromise(false);
     }
     if (this.state.favorites.size === 0) {
-      this.setState({
-        fetchMode: "favorite",
-        resultsStatus: "ready",
-        selectedCat: null,
-        typedCatVal: null,
-        zip: null,
-        zipFinal: null,
-        distanceMiles: DISTANCE_DEFAULT,
-        distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT),
-        offset: 0,
-        businessCountTotal: 0,
-        businessRecs: []
-      });
-      return true;
+      return (
+        this.setStatePromise(
+          {
+            fetchMode: "favorite",
+            resultsStatus: "ready",
+            selectedCat: null,
+            typedCatVal: null,
+            zip: null,
+            zipFinal: null,
+            distanceMiles: DISTANCE_DEFAULT,
+            distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT),
+            offset: 0,
+            businessCountTotal: 0,
+            businessRecs: []
+          }
+        )
+          .then(() => true)
+      );
     }
     const queryObj: AppQueryObj = (
       this.buildQueryBizFavs(
         this.exportFavorites()
       )
     );
-    if (this.state.favorites == null) {
+    if (this.state.favorites === undefined || this.state.favorites === null) {
       this.setAppFatal("favorites must be set");
-      return false;
+      return this.buildPromise(false);
     }
     const favSize: number = this.state.favorites.size;
-    GQL_CLIENT
-      .send(queryObj.query, queryObj.variables)
-      // Add this step to normalize the response data
-      // so it is the same as our search response data
-      .then(
-        this.convertBizIdResponseRecs.bind(
-          this,
-          favSize
+    return (
+      GQL_CLIENT
+        .send(queryObj.query, queryObj.variables)
+        .catch((error) => {
+          this.setAppFatal("Could not send GQL query for biz ids", error);
+          return false;
+        })
+        // Add this step to normalize the response data
+        // so it is the same as our search response data
+        .then(
+          this.convertBizIdResponseRecs.bind(
+            this,
+            favSize
+          )
         )
-      )
-      .then((data) => {
-        this.setState({
-          fetchMode: "favorite",
-          resultsStatus: "ready",
-          selectedCat: null,
-          typedCatVal: null,
-          zip: null,
-          zipFinal: null,
-          distanceMiles: DISTANCE_DEFAULT,
-          distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT),
-          offset: 0,
-          businessCountTotal: data.search.total,
-          businessRecs: data.search.business
-        });
-      });
-    return true;
+        .then((data) => {
+          return (
+            this.setStatePromise({
+              fetchMode: "favorite",
+              resultsStatus: "ready",
+              selectedCat: null,
+              typedCatVal: null,
+              zip: null,
+              zipFinal: null,
+              distanceMiles: DISTANCE_DEFAULT,
+              distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT),
+              offset: 0,
+              businessCountTotal: data.search.total,
+              businessRecs: data.search.business
+            })
+              .then(() => true)
+          );
+        })
+    );
   }
 
   /**
    * Fetch results for current search mode
    *
    * @param {number} offset - Offset
-   * @param {boolean}
+   * @param {Promise<boolean>}
    */
-  fetchResultsForCurrentMode (offset: number): boolean {
-    if (this.state.fetchMode == null) {
-      this.setAppFatal("fetchMOde must be set");
-      return false;
+  fetchResultsForCurrentMode (offset: number): Promise<boolean> {
+    if (this.state.fetchMode === undefined || this.state.fetchMode === null) {
+      this.setAppFatal("fetchMode must be set");
+      return this.buildPromise(false);
     }
     return this.fetchResults(this.state.fetchMode, offset);
+  }
+
+  /**
+   * Simple helper method to build a basic
+   * promise that just resolves to a simple
+   * static value.  This is helpful
+   * when keeping Flow happy.
+   *
+   * @param {any} value - Any value to be returned
+   * @return {Promise<any>}
+   */
+  buildPromise (value: any): Promise<any> {
+    return Promise.resolve(value);
   }
 
   /**
@@ -1541,25 +1686,27 @@ class App extends React.Component<AppProps, AppState> {
    * @param {number} offset - Offset
    * @return {boolean}
    */
-  fetchResults (fetchMode: string, offset: number): boolean {
-    this.setState(
-      {
-        resultsStatus: "loading"
-      },
-      () => {
-        if (fetchMode === "search") {
-          this.fetchSearchResults(offset);
-          return true;
-        }
-        if (fetchMode === "favorite") {
-          this.fetchFavResults();
-          return true;
-        }
-        this.setAppFatal("invalid fetchMode");
-        return false;
-      }
+  fetchResults (fetchMode: string, offset: number): Promise<boolean> {
+    return (
+      this
+        .setStatePromise(
+          {
+            resultsStatus: "loading"
+          }
+        )
+        .then(
+          () => {
+            if (fetchMode === "search") {
+              return this.fetchSearchResults(offset);
+            }
+            if (fetchMode === "favorite") {
+              return this.fetchFavResults();
+            }
+            this.setAppFatal("invalid fetchMode");
+            return this.buildPromise(false);
+          }
+        )
     );
-    return false;
   }
 
   /**
@@ -1567,8 +1714,11 @@ class App extends React.Component<AppProps, AppState> {
    *
    * @return {void}
    */
-  setAppFatal (msg: string): void {
-    throw new Error(msg);
+  setAppFatal (msg: string, error: any=null): void {
+    const newError: Error = new Error(msg);
+    // $FlowFixMe
+    newError.origError = error;
+    throw newError;
   }
 
   /**
