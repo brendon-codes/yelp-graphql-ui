@@ -17,9 +17,10 @@
   ],
   "dependencies": {
     "bootstrap": "4.0.0-beta.3",
-    "dexie": "^2.0.1",
+    "dexie": "2.0.1",
+    "enzyme-wait": "^1.0.9",
     "font-awesome": "4.7.0",
-    "graphql": "^0.12.3",
+    "graphql": "0.12.3",
     "lokka": "1.7.0",
     "lokka-transport-http": "1.6.1",
     "react": "16.2.0",
@@ -29,25 +30,36 @@
     "trie-search": "1.0.9"
   },
   "devDependencies": {
+    "fake-indexeddb": "2.0.3",
+    "node-fetch": "1.7.3",
     "babel-core": "6.26.0",
+    "babel-eslint": "8.2.1",
+    "babel-jest": "22.1.0",
     "babel-loader": "7.1.2",
     "babel-plugin-transform-flow-comments": "6.22.0",
+    "babel-preset-env": "1.6.1",
     "babel-preset-react": "6.24.1",
-    "babel-eslint": "8.2.1",
     "css-loader": "0.28.9",
+    "enzyme": "3.3.0",
+    "enzyme-wait": "1.0.9",
+    "enzyme-adapter-react-16": "1.1.1",
     "eslint": "4.16.0",
     "eslint-loader": "1.9.0",
-    "eslint-plugin-react": "7.6.0",
     "eslint-plugin-flowtype": "2.24.0",
+    "eslint-plugin-react": "7.6.0",
     "extract-text-webpack-plugin": "3.0.2",
     "flow-babel-webpack-plugin": "1.1.1",
+    "jest": "22.1.4",
+    "jest-css-modules": "1.1.0",
     "node-sass": "4.7.2",
+    "react-test-renderer": "16.2.0",
     "sass-loader": "6.0.6",
     "style-loader": "0.19.1",
     "url-loader": "0.6.2",
     "webpack": "3.10.0"
   },
   "scripts": {
-    "webpack": "node_modules/webpack/bin/webpack.js"
+    "webpack": "node_modules/webpack/bin/webpack.js",
+    "test": "node_modules/jest/bin/jest.js"
   }
 }

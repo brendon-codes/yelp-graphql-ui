@@ -41,6 +41,8 @@ export type AppFav = {
   business_id: string
 }
 
+export type AppFavs = Array<AppFav>;
+
 export type AppBizRec = {
   id: string,
   name: string,

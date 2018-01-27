@@ -49,6 +49,8 @@ module.exports = {
     "semi": [
       "error",
       "always"
-    ]
+    ],
+    "eqeqeq": ["error", "always"],
+    "max-len": ["error", {"code": 80}]
   }
 };
