@@ -14,7 +14,11 @@ function setup (): boolean {
 
 
 function init (): boolean {
-  ReactDom.render(<App />, document.getElementById("root"));
+  const root: ?Element = document.getElementById("root");
+  if (root == null) {
+    throw new Error("Could not get root");
+  }
+  ReactDom.render(<App />, root);
   return true;
 }
 

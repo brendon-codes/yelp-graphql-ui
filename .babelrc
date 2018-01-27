@@ -1,7 +1,9 @@
 {
   "presets": [
-    "flow",
     "react"
+  ],
+  "plugins": [
+    "transform-flow-comments"
   ]
 }
 
