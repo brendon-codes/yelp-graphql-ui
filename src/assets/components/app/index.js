@@ -1,150 +1,169 @@
 
 // @flow
 
+/**
+ * Yelp Business Search Component
+ *
+ * This acts as a basic Yelp Business Search client,
+ * making use of the Yelp GraphQL API.
+ *
+ * There are two Yelp bugs to be mindful of.  Please see the README.md
+ * file for more information on those.
+ *
+ */
+
 import React from "react";
 
-import { Lokka } from "lokka";
-import { Transport as LokkaTransport } from "lokka-transport-http";
-
+// eslint-disable-next-line no-unused-vars
 import Fontawesome from "font-awesome/scss/font-awesome.scss";
 import Autosuggest from "react-autosuggest";
 import TrieSearch from "trie-search";
-import Dexie from "dexie";
 
+// eslint-disable-next-line no-unused-vars
 import AppStyle from "./app.scss";
 
-const BIZ_SEARCH_LIMIT: number = 20;
-const BIZ_DISPLAY_LIMIT: number = 20;
-const CAT_SEARCH_LIMIT: number = 10;
-const CAT_CLEAN_RE: RegExp = new RegExp("[^A-Za-z0-9]+", "g");
-const DISTANCE_MILES_MAX: number = 25;
-const DISTANCE_METERS_MAX: number = 40000;
-const DISTANCE_METERS_PER_MILE: number = 1609.344;
-const DISTANCE_DEFAULT: number = 1;
+import type {
+  ReactNode,
+  ReactEvent,
+  AppQueryObj,
+  AppCatOrig,
+  AppCatsOrig,
+  AppCat,
+  AppCats,
+  AppFav,
+  AppBizRec,
+  AppBizRecs,
+  AppProps,
+  AppState
+} from "./types";
 
-const GQL_CLIENT: Lokka = (
-  new Lokka({
-    transport: new LokkaTransport("/graphql", {
-      //
-      // We do not set the Authorization header here
-      // which contains the Yelp token.
-      // Instead, we proxy through our own server,
-      // which sets the Authorization header.
-      // This way, we do not leak keys to clients.
-      //
-      headers: {
-        "Content-Type": "application/json",
-        "Accept-Language": "en_US"
-      }
-    })
-  })
-);
+import {
+  BIZ_SEARCH_LIMIT,
+  BIZ_DISPLAY_LIMIT,
+  CAT_SEARCH_LIMIT,
+  CAT_CLEAN_RE,
+  DISTANCE_MILES_MAX,
+  DISTANCE_METERS_MAX,
+  DISTANCE_METERS_PER_MILE,
+  DISTANCE_DEFAULT,
+  ZIP_DEFAULT
+} from "./constants.js";
 
-const DB: Dexie = new Dexie("dsyelp");
-DB.version(1).stores({
-  favorites: "&business_id"
-});
-DB.open();
+import {
+  GQL_CLIENT,
+  DB
+} from "./services";
 
 
-class App extends React.Component {
+class App extends React.Component<AppProps, AppState> {
 
-  constructor(props: Object, context: Object) {
+  /**
+   * Constructor
+   *
+   * @param {AppProps} props - Props
+   * @param {Object} context - Context
+   * @return {void}
+   */
+  constructor(props: AppProps, context: Object): void {
     super(props, context);
-    this.setDefaultState();
+    this.state = this.buildDefaultState();
+    return;
   }
 
-  buildDefaultState (): Object {
+  /**
+   * Returns a default state
+   *
+   * For more information on possible values and types
+   * for each state property, see `types.AppState`.
+   *
+   * @retun {AppState}
+   */
+  buildDefaultState (): AppState {
     return {
-      //
-      // Loading status of business results.
-      // This can apply to both favorites and search.
-      // Possible values:
-      //
-      // - "ready"
-      // - "loading"
-      //
       resultsStatus: "ready",
-      //
-      // Type of business fetch to be done.
-      // Possible values:
-      //
-      // - "search"
-      // - "favorite"
-      // - null
-      //
       fetchMode: null,
-      //
-      // Status of geo loader
-      // Possible values:
-      //
-      // - "waiting"
-      // - "ready"
-      //
-      geoStatus: "waiting",
-      //
-      // This is the field which is being sorted on.
-      // Possible values:
-      //
-      // - "distance"
-      // - "name"
-      // - "location"
-      // - "favorite"
-      //
       sortField: "distance",
-      //
-      // This is the sort direction of the sorted field.
-      // Possible values:
-      //
-      // - "asc"
-      // - "desc"
-      //
       sortDir: "asc",
       offset: 0,
       favorites: null,
       catTrie: null,
       suggestedCats: [],
-      selectedCat: "restaurants",
+      selectedCat: {
+        alias: "restaurants",
+        title: "Restaurants",
+        clean: "restaurants"
+      },
       typedCatVal: "Restaurants",
-      zip: null,
-      zipFinal: null,
+      zip: ZIP_DEFAULT,
+      zipFinal: ZIP_DEFAULT,
       distanceMiles: DISTANCE_DEFAULT,
       distanceMeters: this.convertMilesToMeters(DISTANCE_DEFAULT),
       businessRecs: null,
       businessCountTotal: null
+    };
+  }
+
+  /**
+   * Performs a category search
+   *
+   * @param {string} value - Category string to search for
+   * @return {AppCats} - Found categories
+   */
+  searchCategories (value: string): AppCats {
+    const cleanVal: string = this.cleanCatTitle(value);
+    if (this.state.catTrie == null) {
+      this.setAppFatal("catTrie must be set");
+      return [];
     }
-  }
-
-  setDefaultState (): boolean {
-    this.state = this.buildDefaultState();
-    return true;
-  }
-
-  searchCategories (value) {
-    const cleanVal: String = this.cleanCatTitle(value);
     const res = this.state.catTrie.get(cleanVal).slice(0, CAT_SEARCH_LIMIT);
     return res;
   }
 
-  handleSuggCatsFetchRequested ({ value }): boolean {
+  /**
+   * Event handler for setting suggested categories
+   *
+   * @param {{value: string}} - Category string to search for
+   * @return {boolean}
+   */
+  handleSuggCatsFetchRequested ({value}: {value: string}): boolean {
     this.setState({
       suggestedCats: this.searchCategories(value)
     });
     return true;
-  };
+  }
 
+  /**
+   * Event handler for when Autosuggest category search
+   * is cleared.
+   *
+   * @return {boolean}
+   */
   handleSuggCatsClearRequested (): boolean {
     this.setState({
       suggestedCats: []
     });
     return true;
-  };
+  }
 
-  getSuggCatValue (cat): String {
+  /**
+   * Autosuggest callback to get the internal value
+   * of a category object
+   *
+   * @param {AppCat} cat - Category object
+   * @return {string} - Category value
+   */
+  getSuggestionValue (cat: AppCat): string {
     return cat.alias;
   }
 
-  renderSuggCat (cat): Object {
+  /**
+   * Autosuggest callback to get the display element
+   * of a category object
+   *
+   * @param {AppCat} cat - Category object
+   * @return {ReactNode} - Element to render
+   */
+  renderSuggCat (cat: AppCat): ReactNode {
     return (
       <div>
         {cat.title}
@@ -152,9 +171,20 @@ class App extends React.Component {
     );
   }
 
-  findSingleCat (value) {
-    const cleanVal: String = this.cleanCatTitle(value);
-    const res = this.state.catTrie.get(cleanVal);
+  /**
+   * Wrapper to clean and retrieve a single category
+   * value if it exists
+   *
+   * @param {string} value - Category value to search for
+   * @return {?AppCat} - Found catetgory, if any
+   */
+  findSingleCat (value: string): ?AppCat {
+    const cleanVal: string = this.cleanCatTitle(value);
+    if (this.state.catTrie == null) {
+      this.setAppFatal("catTrie must be set");
+      return null;
+    }
+    const res: AppCats = this.state.catTrie.get(cleanVal);
     if (res.length !== 1) {
       return null;
     }
@@ -164,9 +194,19 @@ class App extends React.Component {
     return res[0];
   }
 
-  handleSuggCatChange (event, {newValue}): boolean {
-    const selectedCat = this.findSingleCat(newValue);
-    const catVal: ?String = (
+  /**
+   * Event handler for suggested category change
+   *
+   * @param {ReactEvent} event - Event from Autosuggest
+   * @param {{newValue: string}} - New category value
+   * @return {boolean}
+   */
+  handleSuggCatChange (
+    event: ReactEvent,
+    {newValue}: {newValue: string}
+  ): boolean {
+    const selectedCat: ?AppCat = this.findSingleCat(newValue);
+    const catVal: ?string = (
       (newValue === "") ?
         null :
         newValue
@@ -174,36 +214,54 @@ class App extends React.Component {
     this.setState({
       typedCatVal: catVal,
       selectedCat: selectedCat
-    })
+    });
     return true;
   }
 
+  /**
+   * Autosuggest event handler for selecting a
+   * suggested category
+   *
+   * @param {ReactEvent} event - Event from Autosuggest
+   * @param {
+   *   suggestion: AppCat
+   * } - Suggestion information from Autosuggest
+   * @return {boolean}
+   */
   handleSuggCatSelected (
-    event,
+    event: ReactEvent,
     {
-      suggestion,
-      suggestionValue,
-      suggestionIndex,
-      sectionIndex,
-      method
+      suggestion
+    }: {
+      suggestion: AppCat
     }
   ): boolean {
     this.setState({
       typedCatVal: suggestion.title,
       selectedCat: suggestion
-    })
+    });
     return true;
   }
 
-  getSuggCatValue (): String {
-    return (
-      (this.state.typedCatVal === null) ?
-        "" :
-        this.state.typedCatVal
-    );
+  /**
+   * Get a suggested category display value
+   *
+   * @return {string}
+   */
+  getSuggCatValue (): string {
+    if (this.state.typedCatVal == null) {
+      return "";
+    }
+    return this.state.typedCatVal;
   }
 
-  renderInputCategories (): Object {
+  /**
+   * Returns the Autosuggest element
+   *
+   * @return {ReactNode} -
+   *   An element containing the Autosuggest element
+   */
+  renderInputCategories (): ReactNode {
     return (
       <div className="form-group mr-2">
         <Autosuggest
@@ -215,7 +273,7 @@ class App extends React.Component {
               this.handleSuggCatsClearRequested.bind(this)
             }
             onSuggestionSelected={this.handleSuggCatSelected.bind(this)}
-            getSuggestionValue={this.getSuggCatValue.bind(this)}
+            getSuggestionValue={this.getSuggestionValue.bind(this)}
             renderSuggestion={this.renderSuggCat.bind(this)}
             inputProps={{
               className: "form-control",
@@ -223,22 +281,35 @@ class App extends React.Component {
               value: this.getSuggCatValue(),
               onChange: this.handleSuggCatChange.bind(this)
             }}
-          />
+        />
       </div>
     );
   }
 
+  /**
+   * React hook.
+   * Calls initial data loader.
+   *
+   * @return {boolean}
+   */
   componentWillMount (): boolean {
     this.loadInitData();
     return true;
   }
 
+  /**
+   * Loads initial data such as categories from the
+   * Yelp REST api, and the favorites from IndexedDB
+   *
+   * @return {boolean}
+   */
   loadInitData (): boolean {
+    const loaders: Array<Promise<any>> = [
+      this.loadCategories(),
+      this.loadFavorites()
+    ];
     Promise
-      .all([
-        this.loadCategories(),
-        this.loadFavorites()
-      ])
+      .all(loaders)
       .then(resGroups => {
         return {
           categories: resGroups[0],
@@ -251,52 +322,32 @@ class App extends React.Component {
             favorites: this.preProcessFavorites(obj.favorites),
             catTrie: this.preProcessCategories(obj.categories)
           },
-          this.loadInitGeoData.bind(this)
-        )
+          () => {
+            this.fetchResults("search", 0);
+            return true;
+          }
+        );
       });
     return true;
   }
 
-  enableGeoReady (zipCode: ?String=null) {
-    this.setState(
-      {
-        geoStatus: "ready",
-        zipFinal: zipCode,
-        zip: zipCode
-      },
-      this.fetchResults.bind(this, "search", 0)
-    );
-    return true;
-  }
-
-  loadInitGeoData (): boolean {
-    this.enableGeoReady("90402");
-    return true;
-
-    if(!navigator.geolocation) {
-      this.enableGeoReady();
-      return false;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        console.log(position);
-        this.enableGeoReady();
-        return true;
-      },
-      () => {
-        this.enableGeoReady();
-        return true;
-      }
-    );
-    return true;
-  }
-
-  preProcessFavorites (favorites): Set {
-    const results: Set = new Set(favorites.map(fav => fav.business_id));
+  /**
+   * Pre process favorites
+   *
+   * @param {Array<AppFav>} - Favorites records
+   * @return {Set<string>} - Set of business ids
+   */
+  preProcessFavorites (favorites: Array<AppFav>): Set<string> {
+    const results: Set<string> = new Set(favorites.map(fav => fav.business_id));
     return results;
   }
 
-  loadFavorites () {
+  /**
+   * Load favorites from indexeddb
+   *
+   * @return {Array<AppFav>} - Favorites records
+   */
+  loadFavorites (): Promise<Array<AppFav>> {
     return (
       DB
         .favorites
@@ -304,7 +355,12 @@ class App extends React.Component {
     );
   }
 
-  loadCategories () {
+  /**
+   * Load categories from Yelp REST.
+   *
+   * @return {Promise<AppCats, Error>} - Promise of categores Array
+   */
+  loadCategories (): Promise<AppCatsOrig> {
     return (
       fetch(
         "/categories",
@@ -312,16 +368,29 @@ class App extends React.Component {
           method: "GET"
         }
       )
-      .then(response => response.json())
+        .then(response => response.json())
     );
   }
 
-  cleanCatTitle (val: String): String {
+  /**
+   * Clean category title string
+   *
+   * @param {string} val - Category value to clean
+   * @return {string} - Cleaned value
+   */
+  cleanCatTitle (val: string): string {
     return val.replace(CAT_CLEAN_RE, "").toLowerCase();
   }
 
-  preProcessCategories (cats) {
-    const buildCat: Function = (cat: Object): Object => {
+  /**
+   * Pre process categories
+   *
+   * @param {AppCats} cats - Catogories Array
+   * @return {TrieSearch} -
+   *   A TrieSearch object representing a Trie structure
+   */
+  preProcessCategories (cats: AppCatsOrig) {
+    const buildCat: Function = (cat: AppCatOrig): AppCat  => {
       return {
         clean: this.cleanCatTitle(cat.title),
         title: cat.title,
@@ -338,12 +407,17 @@ class App extends React.Component {
         }
       )
     );
-    const builtCats: Array = cats.map(buildCat.bind(this));
+    const builtCats: AppCats = cats.map(buildCat.bind(this));
     ts.addAll(builtCats);
     return ts;
   }
 
-  renderLoading (): Object {
+  /**
+   * Returns loading element
+   *
+   * @return {ReactNode} - Element
+   */
+  renderLoading (): ReactNode {
     return (
       <div className="row pt-5">
         <div className="col text-center">
@@ -353,7 +427,12 @@ class App extends React.Component {
     );
   }
 
-  renderWaitingForAction (): Object {
+  /**
+   * Returns element for waiting for a search.
+   *
+   * @return {ReactNode} - Element
+   */
+  renderWaitingForAction (): ReactNode {
     return (
       <div className="row pt-5">
         <div className="col font-italic text-center">
@@ -363,7 +442,13 @@ class App extends React.Component {
     );
   }
 
-  renderBusinessSection (): Object {
+  /**
+   * Wrapper to return Element for businesses
+   * listings section.
+   *
+   * @return {ReactNode} - Element
+   */
+  renderBusinessSection (): ReactNode {
     //
     // A user operation is currently in progress
     //
@@ -374,7 +459,7 @@ class App extends React.Component {
     // No business results are currently available
     // and no user operation is currently in progress
     //
-    if (this.state.businessRecs === null) {
+    if (this.state.businessRecs == null) {
       return this.renderWaitingForAction();
     }
     //
@@ -390,7 +475,12 @@ class App extends React.Component {
     return this.renderBusinessesReady();
   }
 
-  renderBusinessesReady (): Object {
+  /**
+   * Returns element for business ready to render results
+   *
+   * @return {ReactNode} - Element
+   */
+  renderBusinessesReady (): ReactNode {
     return (
       <div className="mt-3">
         {this.renderPagerBox()}
@@ -399,7 +489,12 @@ class App extends React.Component {
     );
   }
 
-  renderPagerBox (): Object {
+  /**
+   * Returns element for top pager information.
+   *
+   * @return {ReactNode} - Element
+   */
+  renderPagerBox (): ReactNode {
     return (
       <div className="row mb-1 justify-content-between">
         {this.renderPagerText()}
@@ -408,8 +503,13 @@ class App extends React.Component {
     );
   }
 
-  renderResultsEmpty (): Object {
-    const resultLabel: String = this.getFetchModeText();
+  /**
+   * Returns element for empty business results.
+   *
+   * @return {ReactNode} - Element
+   */
+  renderResultsEmpty (): ReactNode {
+    const resultLabel: string = this.getFetchModeText();
     return (
       <div className="row pt-5">
         <div className="col font-italic text-center">
@@ -419,7 +519,18 @@ class App extends React.Component {
     );
   }
 
-  handleClickRowHeadField (code, event: Object): boolean {
+  /**
+   * Click handler for a top row head for specifying
+   * sort field and sort direction.
+   *
+   * @param {string} code - Sort field
+   * @param {ReactEvent} event - React click event
+   * @return {boolean}
+   */
+  handleClickRowHeadField (
+    code: string,
+    event: ReactEvent
+  ): boolean {
     event.preventDefault();
     const opts: Object = {
       sortField: this.state.sortField,
@@ -440,6 +551,10 @@ class App extends React.Component {
         return "";
       })();
     }
+    if (this.state.businessRecs == null) {
+      this.setAppFatal("businessRecs must be set");
+      return false;
+    }
     opts.businessRecs = (
       this.sortBizRecs(
         this.state.businessRecs,
@@ -451,33 +566,41 @@ class App extends React.Component {
     return false;
   }
 
-  renderRowHeadField (val: String, code: String): Object {
-    const iconClassName: Object = (() => {
-        if (this.state.sortDir === "asc") {
-          return "fa-chevron-up";
-        }
-        if (this.state.sortDir === "desc") {
-          return "fa-chevron-down";
-        }
-        this.setAppFatal("Invalid sort direction.");
-        return "";
+  /**
+   * Returns an element for a field head to be clicked
+   * for specifying sort field and direction.
+   *
+   * @param {string} val - Text to be displayed
+   * @param {string} code - Sort field code
+   * @return {ReactNode} - Element
+   */
+  renderRowHeadField (val: string, code: string): ReactNode {
+    const iconClassName: string = (() => {
+      if (this.state.sortDir === "asc") {
+        return "fa-chevron-up";
+      }
+      if (this.state.sortDir === "desc") {
+        return "fa-chevron-down";
+      }
+      this.setAppFatal("Invalid sort direction.");
+      return "";
     })();
     const selected: boolean = (this.state.sortField === code);
-    const linkClassName: String = (
+    const linkClassName: string = (
       selected ?
         "sorter-select" :
         "sorter-noselect"
     );
-    const sortIcon: Object = (
+    const sortIcon: ReactNode = (
       selected ?
-      (
-        <span>
-          <span
-              className={this.buildClassNames(["fa", iconClassName])}></span>
-          &nbsp;
-        </span>
-      ) :
-      []
+        (
+          <span>
+            <span
+                className={this.buildClassNames(["fa", iconClassName])}></span>
+            &nbsp;
+          </span>
+        ) :
+        null
     );
     return (
       <a
@@ -492,7 +615,19 @@ class App extends React.Component {
     );
   }
 
-  renderResultsTable (): Object {
+  /**
+   * Returnss business results table
+   *
+   * @return {ReactNode} - Element
+   */
+  renderResultsTable (): ReactNode {
+    if (this.state.businessRecs == null) {
+      this.setAppFatal("businessRecs should not be empty");
+      return null;
+    }
+    const outRecs: Array<ReactNode> = (
+      this.state.businessRecs.map(this.renderBusinessRec.bind(this))
+    );
     return (
       <table>
         <thead>
@@ -513,15 +648,20 @@ class App extends React.Component {
           </tr>
         </thead>
         <tbody>
-          {this.state.businessRecs.map(this.renderBusinessRec.bind(this))}
+          {outRecs}
         </tbody>
       </table>
     );
   }
 
-  renderPagerNav (): Object {
+  /**
+   * Returns element for page nav actions
+   *
+   * @return {ReactNode} - Element
+   */
+  renderPagerNav (): ReactNode {
     if (this.state.fetchMode !== "search") {
-      return [];
+      return null;
     }
     const [ showPrev: boolean, showNext: boolean ] = this.getPageLinkInfo();
     const optsPrev: Object = (
@@ -549,20 +689,38 @@ class App extends React.Component {
     );
   }
 
-  getFetchModeText (): String {
+  /**
+   * Gets fetch mode text for display
+   *
+   * @return {string}
+   */
+  getFetchModeText (): string {
     if (this.state.fetchMode === "search") {
       return "search results";
     }
     if (this.state.fetchMode === "favorite") {
       return "favorites";
     }
-    this.setAppFatal();
+    this.setAppFatal("fetchMode must be set");
     return "";
   }
 
-  renderPagerText (): Object {
-    const resultLabel: String = this.getFetchModeText();
+  /**
+   * Returns Element displaying pager info
+   *
+   * @return {ReactNode} - Element
+   */
+  renderPagerText (): ReactNode {
+    const resultLabel: string = this.getFetchModeText();
+    if (this.state.offset == null) {
+      this.setAppFatal("offset must be set");
+      return null;
+    }
     const start: number = this.state.offset;
+    if (this.state.businessRecs == null) {
+      this.setAppFatal("businessRecs must be set");
+      return null;
+    }
     const end: number = this.state.offset + this.state.businessRecs.length;
     return (
       <div className="col font-italic">
@@ -577,45 +735,78 @@ class App extends React.Component {
     );
   }
 
-  pageResults (pageCount: number, event: Object): boolean {
+  /**
+   * Updates pager information
+   *
+   * @param {number} pageCount - Page count
+   * @param {ReactEvent} event - React event
+   * @return {boolean}
+   */
+  pageResults (pageCount: number, event: ReactEvent): boolean {
     event.preventDefault();
     const offset: number = this.getPageOffset(pageCount);
     this.fetchResultsForCurrentMode(offset);
     return false;
   }
 
-  getPageLinkInfo (): Array {
+  /**
+   * Get page link info
+   *
+   * @return {Array<boolean>} - Show previous, Show Next
+   */
+  getPageLinkInfo (): [boolean, boolean] {
+    if (this.state.offset == null) {
+      this.setAppFatal("offset must be set");
+      return [false, false];
+    }
     const offset: number = this.state.offset;
     const bizTotal: ?number = this.state.businessCountTotal;
     const totalIsNull: boolean = (bizTotal === null);
     const showPrev: boolean = (!totalIsNull && (offset > 0));
     const showNext: boolean = (
+      // $FlowFixMe
       (!totalIsNull && ((offset + BIZ_DISPLAY_LIMIT) <= bizTotal))
     );
     //debugger;
     return [showPrev, showNext];
   }
 
-  getPageOffset (pageCount: number): Object {
+  /**
+   * Get page offset
+   *
+   * @param {numbaer} pageCount - Page count
+   * @return {number} - Offset value
+   */
+  getPageOffset (pageCount: number): number {
+    if (this.state.offset == null) {
+      this.setAppFatal("offset must be set");
+      return 0;
+    }
+    const origOffset: number = this.state.offset;
     const incVal: number = BIZ_DISPLAY_LIMIT * pageCount;
-    const checkOffset: number = this.state.offset + incVal;
-    const totalIsNull: boolean = (this.state.businessCountTotal === null);
-    const offset: number = (() => {
+    const checkOffset: number = origOffset + incVal;
+    const offset: number = ((): number => {
       if (checkOffset <= 0) {
-        return 0
+        return 0;
       }
-      if (totalIsNull) {
+      if (this.state.businessCountTotal == null) {
         return 0;
       }
       if (checkOffset > this.state.businessCountTotal) {
-        return this.state.offset
+        return origOffset;
       }
       return checkOffset;
     })();
     return offset;
   }
 
-  buildClassNames (classNames: Array): string {
+  /**
+   * Build class names string from array
+   *
+   * @param {Array<string|null>} classNames - Classnames array
+   * @return {string} - Built classname string
+   */
+  buildClassNames (classNames: Array<?string>): string {
     return (
       classNames
         .filter((v) => (v !== null))
@@ -623,19 +814,44 @@ class App extends React.Component {
     );
   }
 
-  doesBizHavFav (bizId: String): boolean {
+  /**
+   * Checks if business has an associated favorite
+   *
+   * @param {string} bizId - Business id string from Yelp
+   * @return {boolean}
+   */
+  doesBizHavFav (bizId: string): boolean {
+    if (this.state.favorites == null) {
+      this.setAppFatal("favorites must be set");
+      return false;
+    }
     const res: boolean = this.state.favorites.has(bizId);
     return res;
   }
 
+  /**
+   * Checks if business has a favorite, but
+   * does not throw error if favorites have not
+   * yet loaded, making it slightly different
+   * from doesBizHavFav().
+   *
+   * @param {string} bizId - Business id string from Yelp
+   * @return {boolean}
+   */
   isFavorite (bizId: string): boolean {
     return (
-      (this.state.favorites !== null) &&
+      (this.state.favorites != null) &&
         (this.state.favorites.has(bizId))
     );
   }
 
-  removeFavorite (bizId: String): boolean {
+  /**
+   * Removes a favorite
+   *
+   * @param {string} bizId - Business id string from Yelp
+   * @return {boolean}
+   */
+  removeFavorite (bizId: string): boolean {
     DB
       .favorites
       .where("business_id")
@@ -646,7 +862,12 @@ class App extends React.Component {
     return true;
   }
 
-  reloadFavorites (operation): boolean {
+  /**
+   * Refetches and syncs favorites
+   *
+   * @return {Promise<boolean>}
+   */
+  reloadFavorites (): Promise<boolean> {
     return (
       this
         .loadFavorites()
@@ -659,7 +880,13 @@ class App extends React.Component {
     );
   }
 
-  addFavorite (bizId: String): boolean {
+  /**
+   * Adds a favorite
+   *
+   * @param {string} bizId - Business id string from Yelp
+   * @return {boolean}
+   */
+  addFavorite (bizId: string): boolean {
     DB
       .favorites
       .put({
@@ -669,7 +896,18 @@ class App extends React.Component {
     return true;
   }
 
-  handleClickFav (bizId: String, event: Object): Object {
+  /**
+   * Handles when a favorite is clicked
+   *
+   * @param {string} bizId - Business id string from Yelp
+   * @param {ReactEvent} event - React event
+   * @return {boolean}
+   */
+  handleClickFav (
+    bizId: string,
+    // eslint-disable-next-line no-unused-vars
+    event: ReactEvent
+  ): boolean {
     const isFav: boolean = this.isFavorite(bizId);
     if (isFav) {
       this.removeFavorite(bizId);
@@ -679,26 +917,32 @@ class App extends React.Component {
     return true;
   }
 
-  renderBusinessRec (biz: Object): Object {
+  /**
+   * Returns business record for display element
+   *
+   * @param {AppBizRec} biz - Business record
+   * @return {ReactNode}
+   */
+  renderBusinessRec (biz: AppBizRec): ReactNode {
     const selected: boolean = this.doesBizHavFav(biz.id);
-    const classes: Array = (
+    const classes: Array<?string> = (
       selected ?
         ["fa", "fa-heart", "heart-select"] :
         ["fa", "fa-heart", "heart-noselect"]
-    )
-    const photoUrl: ?String = (
+    );
+    const photoUrl: ?string = (
       (biz.photos.length > 0) ?
         biz.photos[0] :
         null
     );
-    const photo: Object = (
+    const photo: ReactNode = (
       (photoUrl !== null) ?
         (
           <img className="logo" src={photoUrl} />
         ) :
-        []
+        null
     );
-    const loc: Array = [];
+    const loc: Array<string> = [];
     if (biz.location.hasOwnProperty("city") && (biz.location.city !== null)) {
       loc.push(biz.location.city);
     }
@@ -708,13 +952,13 @@ class App extends React.Component {
     ) {
       loc.push(biz.location.zip_code);
     }
-    const locStr: String = (
+    const locStr: string = (
       (loc.length > 0) ?
         loc.join(", ") :
         " "
     );
-    const milesStr: String = (
-      (biz.hasOwnProperty("distance") && (biz.distance !== null)) ?
+    const milesStr: string = (
+      (biz.hasOwnProperty("distance") && (biz.distance != null)) ?
         this.convertMetersToMiles(biz.distance).toString() :
         " "
     );
@@ -738,22 +982,36 @@ class App extends React.Component {
     );
   }
 
-  handleChangeZip (event: Object) {
-    const val: ?String = (
+  /**
+   * Event handler when zip input is changed
+   *
+   * @param {ReactEvent} event - React event
+   * @return {boolean}
+   */
+  handleChangeZip (event: ReactEvent): boolean {
+    const val: ?string = (
       (event.target.value === "") ?
         null :
         event.target.value
     );
     const checkGood: RegExp = new RegExp("^[0-9]{1,5}(-[0-9]{0,4})?$");
-    if (val !== null && !val.match(checkGood)) {
-      return true;
+    if (val != null) {
+      if (!val.match(checkGood)) {
+        return true;
+      }
     }
     const checkFinal: RegExp = new RegExp("^[0-9]{5}(-[0-9]{4})?$");
-    const zipFinal: ?String = (
-      (val !== null && !val.match(checkFinal)) ?
-        null :
-        val
-    );
+    // Have to do this to make FlowType happy :(
+    const zipFinal: ?string = ((): ?string => {
+      if (val == null) {
+        return null;
+      }
+      return (
+        !val.match(checkFinal) ?
+          null :
+          val
+      );
+    })();
     this.setState({
       zip: val,
       zipFinal: zipFinal
@@ -761,8 +1019,13 @@ class App extends React.Component {
     return true;
   }
 
-  renderInputZipcode (): Object {
-    const zipVal: ?String = (
+  /**
+   * Renders zip input
+   *
+   * @return {ReactNode}
+   */
+  renderInputZipcode (): ReactNode {
+    const zipVal: ?string = (
       (this.state.zip === null) ?
         "" :
         this.state.zip
@@ -770,15 +1033,21 @@ class App extends React.Component {
     return (
       <div className="form-group mr-2">
         <input
-           className="form-control"
-           onChange={this.handleChangeZip.bind(this)}
-           placeholder="Zip Code"
-           type="text"
-           value={zipVal} />
+            className="form-control"
+            onChange={this.handleChangeZip.bind(this)}
+            placeholder="Zip Code"
+            type="text"
+            value={zipVal} />
       </div>
     );
   }
 
+  /**
+   * Converts meters to miles
+   *
+   * @param {number} meters - Meters
+   * @return {number} - Miles
+   */
   convertMetersToMiles (meters: number): number {
     if (meters >= DISTANCE_METERS_MAX) {
       return DISTANCE_MILES_MAX;
@@ -788,6 +1057,12 @@ class App extends React.Component {
     );
   }
 
+  /**
+   * Converts miles to meters
+   *
+   * @param {number} miles - Miles
+   * @return {number} - Meters
+   */
   convertMilesToMeters (miles: number): number {
     if (miles >= DISTANCE_MILES_MAX) {
       return DISTANCE_METERS_MAX;
@@ -795,7 +1070,13 @@ class App extends React.Component {
     return (miles * DISTANCE_METERS_PER_MILE);
   }
 
-  handleChangeDistance (event): boolean {
+  /**
+   * Event handler when distance is changedo
+   *
+   * @param {ReactEvent} event - React event
+   * @return {boolean}
+   */
+  handleChangeDistance (event: ReactEvent): boolean {
     const miles: number = parseInt(event.target.value, 10);
     const meters: number = this.convertMilesToMeters(miles);
     this.setState({
@@ -805,9 +1086,18 @@ class App extends React.Component {
     return true;
   }
 
-  renderInputDistance (): Object {
+  /**
+   * Render distance input field
+   *
+   * @return {ReactNode}
+   */
+  renderInputDistance (): ReactNode {
+    if (this.state.distanceMiles == null) {
+      this.setAppFatal("distanceMiles must be set");
+      return null;
+    }
     const val: number = this.state.distanceMiles;
-    const nums: Array = this.range(1, DISTANCE_MILES_MAX + 1);
+    const nums: Array<number> = this.range(1, DISTANCE_MILES_MAX + 1);
     return (
       <div className="form-group mr-2">
         <label className="mr-1" htmlFor="inp_distance">Miles:</label>
@@ -824,17 +1114,38 @@ class App extends React.Component {
     );
   }
 
-  range (start: number, end: number): Array {
+  /**
+   * Returns a range of numbers
+   *
+   * @param {number} start - Start number
+   * @param {number} end - End number
+   * @return {Array<number>}
+   */
+  range (start: number, end: number): Array<number> {
     return Array.from({length: (end - start)}, (v, k) => k + start);
   }
 
+  /**
+   * Fetches search results, given an offset
+   *
+   * @param {number} offset - Offset index to start at
+   * @return {boolean}
+   */
   fetchSearchResults (offset: number): boolean {
-    const varCat: ?String = (
-      (this.state.selectedCat === null) ?
+    const varCat: ?string = (
+      (this.state.selectedCat == null) ?
         null :
         this.state.selectedCat.alias
     );
-    const queryObj: Object = (
+    if (this.state.zip == null) {
+      this.setAppFatal("zip must be set");
+      return false;
+    }
+    if (this.state.distanceMeters == null) {
+      this.setAppFatal("distanceMeters must be set");
+      return false;
+    }
+    const queryObj: AppQueryObj = (
       this.buildQueryBizSearch(
         BIZ_SEARCH_LIMIT,
         offset,
@@ -853,17 +1164,43 @@ class App extends React.Component {
           businessCountTotal: data.search.total,
           businessRecs: this.sortBizRecsFromState(data.search.business)
         });
-      })
+      });
     return true;
   }
 
-  sortBizRecsFromState (bizRecs: Array): Array {
+  /**
+   * Wrapper to resort business recs
+   *
+   * @param {AppBizRecs} bizRecs - Business records
+   * @return {AppBizRecs} - Sorted recs
+   */
+  sortBizRecsFromState (bizRecs: AppBizRecs): AppBizRecs {
+    if (this.state.sortField == null) {
+      this.setAppFatal("sortField must be set");
+      return [];
+    }
+    if (this.state.sortDir == null) {
+      this.setAppFatal("sortDir must be set");
+      return [];
+    }
     return this.sortBizRecs(bizRecs, this.state.sortField, this.state.sortDir);
   }
 
-  sortBizRecs (bizRecs: Array, sortField: String, sortDir: String): Array {
-    const checkDir: Function = (condition): boolean => {
-      const [dirYes: number, dirNo: number] = (() => {
+  /**
+   * Sorts business recs
+   *
+   * @param {AppBizRecs} bizRecs - Business records
+   * @param {string} sortField - Field code string to sort on
+   * @param {sortDir} sortDir - Sort direction code
+   * @return {AppBizRecs} - Sorted recs
+   */
+  sortBizRecs (
+    bizRecs: AppBizRecs,
+    sortField: string,
+    sortDir: string
+  ): AppBizRecs {
+    const checkDir: Function = (condition): number => {
+      const [dirYes: number, dirNo: number] = ((): [number, number] => {
         if (sortDir === "asc") {
           return [-1, +1];
         }
@@ -871,17 +1208,27 @@ class App extends React.Component {
           return [+1, -1];
         }
         this.setAppFatal("Invalid sort direction");
-        return -1;
+        return [-1, -1];
       })();
       const ret: number = (condition ? dirYes : dirNo);
       return ret;
     };
-    const sorter: Function = (recA: Object, recB: Object) => {
+    const sorter: Function = (recA: AppBizRec, recB: AppBizRec): number => {
       //
       // Sort Field: Distance
       //
       if (sortField === "distance") {
-        return checkDir(recA.distance < recB.distance);
+        const recACompDist: number = (
+          (recA.distance == null) ?
+            0 :
+            recA.distance
+        );
+        const recBCompDist: number = (
+          (recB.distance == null) ?
+            0 :
+            recB.distance
+        );
+        return checkDir(recACompDist < recBCompDist);
       }
       //
       // Sort Field: Name
@@ -893,18 +1240,16 @@ class App extends React.Component {
       // Sort Field: Location
       //
       if (sortField === "location") {
-        return (
-          checkDir(
-            [
-              recA.location.city,
-              recA.location.zip_code
-            ] <
-              [
-                recB.location.city,
-                recB.location.zip_code
-              ]
-          )
-        );
+        const recACompLoc: [string, string] = [
+          recA.location.city,
+          recA.location.zip_code
+        ];
+        const recBCompLoc: [string, string] = [
+          recB.location.city,
+          recB.location.zip_code
+        ];
+        // $FlowFixMe
+        return checkDir(recACompLoc < recBCompLoc);
       }
       //
       // Sort Field: Favorite
@@ -918,17 +1263,28 @@ class App extends React.Component {
       this.setAppFatal("Invalid sort field");
       return -1;
     };
-    const outRecs: Array = bizRecs.sort(sorter.bind(this));
+    const outRecs: AppBizRecs = bizRecs.sort(sorter.bind(this));
     return outRecs;
   }
 
-  handleSubmitForm (event: Object): boolean {
+  /**
+   * Event handler for form submission
+   *
+   * @param {ReactEvent} - React event
+   * @return {boolean}
+   */
+  handleSubmitForm (event: ReactEvent): boolean {
     event.preventDefault();
-    this.fetchResults("search", 0)
+    this.fetchResults("search", 0);
     return false;
   }
 
-  queryBusinessFragment () {
+  /**
+   * Builds a GraphQL fragment for a business response
+   *
+   * @return {string}
+   */
+  buildQueryStrBizFragment (): string {
     return (
       `
         fragment bizResponse on Business {
@@ -950,16 +1306,26 @@ class App extends React.Component {
     );
   }
 
+  /**
+   * Build GraphQL query info for a business search
+   *
+   * @param {number} limit - Limit
+   * @param {number} offset - Offset
+   * @param {string} zipCode - Zip Code
+   * @param {number} radius - Radius
+   * @param {?string} category - Category
+   * @return {AppQueryObj}
+   */
   buildQueryBizSearch (
     limit: number,
     offset: number,
-    zipCode: String,
+    zipCode: string,
     radius: number,
-    category: ?String=null
-  ) {
-    const query: String = (
+    category: ?string=null
+  ): AppQueryObj {
+    const query: string = (
       `
-        ${this.queryBusinessFragment()}
+        ${this.buildQueryStrBizFragment()}
 
         query appQuery (
           $limit: Int!,
@@ -990,28 +1356,34 @@ class App extends React.Component {
       radius: radius,
       categories: category
     };
-    const res: Object = {
+    const res: AppQueryObj = {
       query: query,
       variables: variables
     };
-    console.log(query);
-    console.log(variables);
+    //console.log(query);
+    //console.log(variables);
     return res;
   }
 
-  buildQueryBizFavs (bizIds: Array) {
-    const queryArgs: String = (
+  /**
+   * Build GraphQL query info for favorite businesses
+   *
+   * @param {Array<string>} bizIds - Businesses IDs from Yelp
+   * @return {AppQueryObj}
+   */
+  buildQueryBizFavs (bizIds: Array<string>): AppQueryObj {
+    const queryArgs: string = (
       bizIds
-        .map((bizId: String, idx: number) => {
+        .map((bizId: string, idx: number) => {
           return (
             `$id${idx}: String!`
-          )
+          );
         })
         .join(", ")
-    )
-    const bizObjs: String = (
+    );
+    const bizObjs: string = (
       bizIds
-        .map((bizId: String, idx: number) => {
+        .map((bizId: string, idx: number) => {
           return (
             `
               b${idx}:business(id: $id${idx}) {
@@ -1022,9 +1394,9 @@ class App extends React.Component {
         })
         .join("")
     );
-    const query: String = (
+    const query: string = (
       `
-        ${this.queryBusinessFragment()}
+        ${this.buildQueryStrBizFragment()}
 
         query appQuery (${queryArgs}) {
           ${bizObjs}
@@ -1034,36 +1406,66 @@ class App extends React.Component {
     const variables: Object = (
       this.arrayToObject (
         bizIds
-          .map((bizId: String, idx: number) => {
+          .map((bizId: string, idx: number) => {
             return [
               `id${idx}`,
               bizId
-            ]
+            ];
           })
       )
     );
-    const res: Object = {
+    const res: AppQueryObj = {
       query: query,
       variables: variables
     };
     return res;
   }
 
-  arrayToObject (pairs: Array): Object {
-    return Object.assign(...pairs.map((pair) => ({[pair[0]]: pair[1]})))
+  /**
+   * Convert an array of tuples to object
+   *
+   * @param {Array<[any, any]>} pairs - Array of tuples
+   * @return {Object}
+   */
+  arrayToObject (pairs: Array<[any, any]>): Object {
+    // $FlowFixMe
+    return Object.assign(...pairs.map((pair) => ({[pair[0]]: pair[1]})));
   }
 
+  /**
+   * Check if search form should be disabled
+   *
+   * @return {boolean}
+   */
   isFormDisabled (): boolean {
     return (
       (this.state.zipFinal === null)
     );
   }
 
-  exportFavorites (): Array {
+  /**
+   * Export favorites as array
+   *
+   * @return {Array<string>}
+   */
+  exportFavorites (): Array<string> {
+    if (this.state.favorites == null) {
+      this.setAppFatal("favorites must be set");
+      return [];
+    }
     return Array.from(this.state.favorites.keys());
   }
 
+  /**
+   * Fetch and sync favorite results with state
+   *
+   * @return {boolean}
+   */
   fetchFavResults (): boolean {
+    if (this.state.favorites == null) {
+      this.setAppFatal("favorites must be set");
+      return false;
+    }
     if (this.state.favorites.size === 0) {
       this.setState({
         fetchMode: "favorite",
@@ -1080,11 +1482,16 @@ class App extends React.Component {
       });
       return true;
     }
-    const queryObj: Object = (
+    const queryObj: AppQueryObj = (
       this.buildQueryBizFavs(
         this.exportFavorites()
       )
     );
+    if (this.state.favorites == null) {
+      this.setAppFatal("favorites must be set");
+      return false;
+    }
+    const favSize: number = this.state.favorites.size;
     GQL_CLIENT
       .send(queryObj.query, queryObj.variables)
       // Add this step to normalize the response data
@@ -1092,7 +1499,7 @@ class App extends React.Component {
       .then(
         this.convertBizIdResponseRecs.bind(
           this,
-          this.state.favorites.size
+          favSize
         )
       )
       .then((data) => {
@@ -1109,15 +1516,32 @@ class App extends React.Component {
           businessCountTotal: data.search.total,
           businessRecs: data.search.business
         });
-      })
+      });
     return true;
   }
 
+  /**
+   * Fetch results for current search mode
+   *
+   * @param {number} offset - Offset
+   * @param {boolean}
+   */
   fetchResultsForCurrentMode (offset: number): boolean {
+    if (this.state.fetchMode == null) {
+      this.setAppFatal("fetchMOde must be set");
+      return false;
+    }
     return this.fetchResults(this.state.fetchMode, offset);
   }
 
-  fetchResults (fetchMode: String, offset: number): boolean {
+  /**
+   * Fetch results
+   *
+   * @param {string} fetchMode - Fetch mode
+   * @param {number} offset - Offset
+   * @return {boolean}
+   */
+  fetchResults (fetchMode: string, offset: number): boolean {
     this.setState(
       {
         resultsStatus: "loading"
@@ -1131,35 +1555,59 @@ class App extends React.Component {
           this.fetchFavResults();
           return true;
         }
-        this.setAppFatal();
+        this.setAppFatal("invalid fetchMode");
         return false;
       }
-    )
+    );
     return false;
   }
 
-  setAppFatal (msg): boolean {
+  /**
+   * General purpose error handler when all else fails
+   *
+   * @return {void}
+   */
+  setAppFatal (msg: string): void {
     throw new Error(msg);
   }
 
-  handleClickShowFavorites (event: Object): boolean {
+  /**
+   * Handle click button to show favorites
+   *
+   * @param {ReactEvent} event - React event
+   * @return {boolean}
+   */
+  handleClickShowFavorites (event: ReactEvent): boolean {
     event.preventDefault();
-    this.fetchResults("favorite", 0)
+    this.fetchResults("favorite", 0);
     return false;
   }
 
-  convertBizIdResponseRecs (totalCount: number, resObj): Object {
-    const recs: Array = Object.values(resObj);
+  /**
+   * Convert business id response records
+   *
+   * @param {number} totalCount - Total count of all records
+   * @param {Object} resObj - Business response object
+   * @return {Object}
+   */
+  convertBizIdResponseRecs (totalCount: number, resObj: Object): Object {
+    // $FlowFixMe
+    const recs: AppBizRecs = Object.values(resObj);
     const data: Object = {
       search: {
         total: totalCount,
         business: recs
       }
-    }
+    };
     return data;
   }
 
-  renderLinkFavorites (): Object {
+  /**
+   * Render favorites link
+   *
+   * @return {ReactNode}
+   */
+  renderLinkFavorites (): ReactNode {
     return (
       <div className="form-group ml-5">
         <button
@@ -1171,12 +1619,24 @@ class App extends React.Component {
     );
   }
 
-  handleNoop (event: Object): boolean {
+  /**
+   * Event handler which does nothing
+   * Useful for disabling submits
+   *
+   * @param {ReactEvent} event - React event
+   * @return {boolean}
+   */
+  handleNoop (event: ReactEvent): boolean {
     event.preventDefault();
     return false;
   }
 
-  renderInputs (): Object {
+  /**
+   * Render form search bar
+   *
+   * @return {ReactNode}
+   */
+  renderInputs (): ReactNode {
     const isDisabled: boolean = this.isFormDisabled();
     const submitter: ?Function = (
       isDisabled ?
@@ -1197,7 +1657,12 @@ class App extends React.Component {
     );
   }
 
-  renderInputSubmit (): Object {
+  /**
+   * Render search submit button
+   *
+   * @return {ReactNode}
+   */
+  renderInputSubmit (): ReactNode {
     const isDisabled: boolean = this.isFormDisabled();
     return (
       <div className="form-group">
@@ -1211,7 +1676,12 @@ class App extends React.Component {
     );
   }
 
-  renderResults (): Object {
+  /**
+   * Render section containing business listing results
+   *
+   * @return {ReactNode}
+   */
+  renderResults (): ReactNode {
     return (
       <div>
         {this.renderBusinessSection()}
@@ -1219,7 +1689,12 @@ class App extends React.Component {
     );
   }
 
-  renderReady (): Object {
+  /**
+   * Render for application ready state
+   *
+   * @return {ReactNode}
+   */
+  renderReady (): ReactNode {
     return (
       <main>
         {this.renderInputs()}
@@ -1228,7 +1703,12 @@ class App extends React.Component {
     );
   }
 
-  renderHeader (): Object {
+  /**
+   * Render header section
+   *
+   * @return {ReactNode}
+   */
+  renderHeader (): ReactNode {
     return (
       <header className="pt-5 pb-5 text-center">
         <h1 className="text-uppercase mb-0">Yelp Business Search</h1>
@@ -1240,7 +1720,12 @@ class App extends React.Component {
     );
   }
 
-  render (): Object {
+  /**
+   * Main render callback for React
+   *
+   * @return {ReactNode}
+   */
+  render (): ReactNode {
     return (
       <div className="container" data-component="app">
         {this.renderHeader()}
@@ -1249,15 +1734,24 @@ class App extends React.Component {
     );
   }
 
+  /**
+   * Check if app is ready
+   *
+   * @return {boolean}
+   */
   checkAppIsReady (): boolean {
     return (
       (this.state.catTrie !== null) &&
-        (this.state.favorites !== null) &&
-        (this.state.geoStatus === "ready")
+        (this.state.favorites !== null)
     );
   }
 
-  renderMain (): Object {
+  /**
+   * Render main section below header
+   *
+   * @return {ReactNode}
+   */
+  renderMain (): ReactNode {
     if (!this.checkAppIsReady()) {
       return this.renderLoading();
     }

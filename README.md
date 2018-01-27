@@ -20,9 +20,9 @@ So, this creates a problem for storing favorites data locally.
 If a user sets a favorite company, using the `id`, then Yelp
 changes that `id` for the business, then there will be a mismatch.
 
-There could be some possible clever workarounds for this, but
-the issue seems very rare, and I have limited time, so I decided
-to spend my time on more important components of this project.
+One possible workaround for this is to use the Yelp Fusion or Autocomplete
+APIs to get a more permanent identifier for a business.  Perhaps
+this solution can be explored at some point in the future.
 
 
 ### Distance Bug
@@ -36,11 +36,7 @@ ironing out some of the problems.
 I have filed a bug for this issue here:
 https://github.com/Yelp/yelp-fusion/issues/351
 
-Again, there could be some complicated client side workarounds for this,
-but I decided to spend my time on more important aspects of
-this project, keeping in mind the objective of demonstrating proficiency
-in various skillsets.
-
-Until this issue is resolved by Yelp, this UI application will return
-businesses which are beyond the specified distance.
-
+There could be a workaround for this which involves tracking
+pager information for requests, then tracking different pager
+information for display.  This would be somewhat complicated, and
+would also cause the total results display number to be incorrect.

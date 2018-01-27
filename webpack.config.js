@@ -4,6 +4,7 @@
 const Webpack = require("webpack");
 const Extend = require("util")._extend;
 const Path = require("path");
+var FlowBabelWebpackPlugin = require("flow-babel-webpack-plugin");
 //const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 const ExtractTextPlugin = require("extract-text-webpack-plugin");
 
@@ -11,7 +12,7 @@ const ExtractTextPlugin = require("extract-text-webpack-plugin");
 const BuildBase = function (inJs, outJs, outCss) {
   return {
     devtool: "inline-source-map",
-    watch: true,
+    watch: false,
     entry: {
       site: inJs
     },
@@ -26,6 +27,7 @@ const BuildBase = function (inJs, outJs, outCss) {
         NODE_ENV: "development",
         DEBUG: true
       }),
+      new FlowBabelWebpackPlugin(),
       new ExtractTextPlugin({
         filename: outCss
       })
@@ -41,6 +43,9 @@ const BuildBase = function (inJs, outJs, outCss) {
                 compact: false
               }
             },
+            {
+              loader: "eslint-loader"
+            }
           ],
           exclude: /node_modules/
         },
