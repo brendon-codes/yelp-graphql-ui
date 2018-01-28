@@ -4,12 +4,12 @@
 import React from "react";
 import type {
   ReactNode,
-  ErrorProps,
-  ErrorState
+  AppErrorProps,
+  AppErrorState
 } from "./types";
 
 
-class ErrorBoundary extends React.Component<ErrorProps, ErrorState> {
+class AppErrorBoundary extends React.Component<AppErrorProps, AppErrorState> {
 
   /**
    * Constructor
@@ -17,7 +17,7 @@ class ErrorBoundary extends React.Component<ErrorProps, ErrorState> {
    * @param {ErrorProps} props
    * @param {Object} context
    */
-  constructor (props: ErrorProps, context: Object): void {
+  constructor (props: AppErrorProps, context: Object): void {
     super(props, context);
     this.state = this.buildDefaultState();
     return;
@@ -31,7 +31,7 @@ class ErrorBoundary extends React.Component<ErrorProps, ErrorState> {
    *
    * @retun {AppState}
    */
-  buildDefaultState (): ErrorState {
+  buildDefaultState (): AppErrorState {
     return {
       hasError: false,
       error: null,
@@ -62,11 +62,31 @@ class ErrorBoundary extends React.Component<ErrorProps, ErrorState> {
   }
 
   /**
+   * Render Error
+   */
+  renderError (): ReactNode {
+    return (
+      <main>
+        <div className="container">
+          <div className="row mt-5">
+            <div className="col font-weight-bold text-center">
+              An error occurred.
+              Please contact{" "}
+              <a href="mailto:brendon@aphex.io">Brendon Crawford</a>{" "}
+              for support.
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  /**
    * Render
    */
   render(): ReactNode {
     if (this.state.hasError) {
-      return (<h3>An error has occurred.</h3>);
+      return this.renderError();
     }
     return this.props.children;
   }
@@ -74,5 +94,5 @@ class ErrorBoundary extends React.Component<ErrorProps, ErrorState> {
 }
 
 
-export default ErrorBoundary;
+export default AppErrorBoundary;
 

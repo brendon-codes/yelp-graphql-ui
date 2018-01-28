@@ -198,3 +198,17 @@ export type AppState = {
   //
   businessCountTotal?: ?number
 };
+
+export type AppErrorProps = {
+  children: TypeReactNode
+};
+
+export type AppErrorState = {
+  hasError: boolean,
+  error: ?Error,
+  info: ?Object
+};
+
+export type AppCoreProps = {};
+
+export type AppCoreState = {};

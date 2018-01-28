@@ -1,4 +1,21 @@
 #!/bin/bash
 
-sudo docker build --rm --tag dsyelp .
+shopt -s expand_aliases
+
+##
+## Check if we need sudo
+##
+$(docker ps &> /dev/null)
+if [ "${?}" != "0" ]; then
+  set_alias () { alias mydocker="sudo docker"; }
+else
+  set_alias () { alias mydocker="docker"; }
+fi;
+set_alias
+
+##
+## Begin App
+##
+
+mydocker build --rm --tag dsyelp .
 

@@ -1,10 +1,27 @@
 #!/bin/bash
 
-resp=$(sudo docker ps --quiet --all --filter="name=dsyelp")
+shopt -s expand_aliases
+
+##
+## Check if we need sudo
+##
+$(docker ps &> /dev/null)
+if [ "${?}" != "0" ]; then
+  set_alias () { alias mydocker="sudo docker"; }
+else
+  set_alias () { alias mydocker="docker"; }
+fi;
+set_alias
+
+##
+## Begin App
+##
+
+resp=$(mydocker ps --quiet --all --filter="name=dsyelp")
 repos=$(realpath -e "$(pwd)/../")
 
 if [ "${resp}" = "" ]; then
-  sudo docker run \
+  mydocker run \
     --publish="80:80" \
     --add-host='dsyelp.local:127.0.0.1' \
     --privileged \
@@ -16,6 +33,6 @@ if [ "${resp}" = "" ]; then
     --name='dsyelp' \
     dsyelp;
 else
-  sudo docker start dsyelp
+  mydocker start dsyelp
 fi;
 

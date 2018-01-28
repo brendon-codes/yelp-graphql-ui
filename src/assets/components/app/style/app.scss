@@ -6,7 +6,7 @@
 // and mixins.  This can be done when doing
 // webpack imports, but not quite as simply/easily.
 //
-@import "../../shared/bootstrap/loader.scss";
+@import "../../../shared/bootstrap/loader.scss";
 
 
 div[data-component="app"] {

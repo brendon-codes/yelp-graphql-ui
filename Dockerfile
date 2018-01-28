@@ -49,7 +49,7 @@ COPY sysconfigs/local/local/etc/nginx/inc/yelp-key.conf /etc/nginx/inc/yelp-key.
 ##
 ## Node
 ##
-curl -sL https://deb.nodesource.com/setup_8.x | bash
+RUN curl -sL https://deb.nodesource.com/setup_8.x | bash
 RUN apt-get update;
 RUN apt-get install -y nodejs;
 
