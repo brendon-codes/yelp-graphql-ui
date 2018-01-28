@@ -17,4 +17,5 @@ set_alias
 ## Begin App
 ##
 
-mydocker stop dsyelp;
+mydocker exec --interactive --tty dsyelp /bin/bash -c 'cd /App/repos/dsyelp; npm run webpack-dev-build;'
+

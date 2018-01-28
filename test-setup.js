@@ -32,9 +32,9 @@ process.on(
 // Provide a helper method, since only causing .update()
 // does not always properly update the dom.
 //
-ShallowWrapper.prototype.updateDom = function () {
-  this.instance().forceUpdate();
-  this.update();
+ShallowWrapper.prototype.updateDom = async function () {
+  await this.instance().forceUpdate();
+  await this.update();
   return true;
 };
 

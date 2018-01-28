@@ -59,7 +59,8 @@
     "webpack": "3.10.0"
   },
   "scripts": {
-    "webpack": "node_modules/webpack/bin/webpack.js",
+    "webpack-dev-watch": "node_modules/webpack/bin/webpack.js --watch",
+    "webpack-dev-build": "node_modules/webpack/bin/webpack.js",
     "test": "node_modules/jest/bin/jest.js"
   }
 }
