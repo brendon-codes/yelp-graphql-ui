@@ -56,11 +56,12 @@
     "sass-loader": "6.0.6",
     "style-loader": "0.19.1",
     "url-loader": "0.6.2",
-    "webpack": "3.10.0"
+    "webpack": "3.10.0",
+    "uglifyjs-webpack-plugin": "1.1.8"
   },
   "scripts": {
-    "webpack-dev-watch": "node_modules/webpack/bin/webpack.js --watch",
-    "webpack-dev-build": "node_modules/webpack/bin/webpack.js",
+    "webpack-watch": "node_modules/webpack/bin/webpack.js --config='./webpack_config/watch.js'",
+    "webpack-build": "node_modules/webpack/bin/webpack.js --config='./webpack_config/build.js'",
     "test": "node_modules/jest/bin/jest.js"
   }
 }

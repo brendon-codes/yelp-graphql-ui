@@ -1,6 +1,11 @@
 
 // @flow
 
+/**
+ * This file contains the various custom types used
+ * by this app/component.
+ */
+
 import React from "react";
 import type {
   Node as TypeReactNode

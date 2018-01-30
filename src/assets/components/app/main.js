@@ -1600,6 +1600,9 @@ class AppMain extends React.Component<AppProps, AppState> {
           {
             fetchMode: "favorite",
             resultsStatus: "ready",
+            // By default, sort by name when viewing favorites
+            sortField: "name",
+            sortDir: "asc",
             selectedCat: null,
             typedCatVal: null,
             zip: null,

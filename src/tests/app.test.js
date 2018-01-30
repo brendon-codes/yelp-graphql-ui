@@ -1,6 +1,18 @@
 
 // @flow
 
+/**
+ * Various tests for app component.
+ *
+ * For triggering events, these tests directly
+ * call the onFoo() event handler instead of
+ * calling .simulate().  This is due to the fact
+ * that .simulate() doesnt seem to await on
+ * returned promises, which is necessary for
+ * us to get all our data back before continuing
+ * operations.
+ */
+
 import Autosuggest from "react-autosuggest";
 import React from "react";
 import { shallow, mount, render, ShallowWrapper as Shallow } from "enzyme";
@@ -43,6 +55,14 @@ describe(
     const buildFakeEventAutosuggestChange: Function = (val: string): Object => {
       return {
         newValue: val
+      }
+    };
+
+    const buildFakeEventChange: Function = (val: string): Object => {
+      return {
+        target: {
+          value: val
+        }
       }
     };
 
@@ -215,10 +235,7 @@ describe(
         const app: Shallow = await setupAppInitData();
         const zip: Shallow = app.find("input#inp-zip");
         expect(zip).toHaveLength(1);
-        await zip.simulate(
-          "change",
-          {target: {value: "90404"}}
-        );
+        await zip.props().onChange(buildFakeEventChange("90402"));
         // For some reason, we cant get Autosuggest to
         // mount here without errors.
         // But we can still simulate the event

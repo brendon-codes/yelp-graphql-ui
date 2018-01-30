@@ -1,6 +1,12 @@
 
 // @flow
 
+/**
+ * This operates as a React error boundary component
+ * for catching errors in sub components. This is a new
+ * feature in React 16.
+ */
+
 import React from "react";
 import type {
   ReactNode,

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+CURRDIR="$(dirname "${0}")"
+source "${CURRDIR}/lib"
+
+##
+## Begin App
+##
+
+mydocker exec --interactive --tty dsyelp /bin/bash -c 'tail -n 2 -f /var/log/nginx/access.log;'
+

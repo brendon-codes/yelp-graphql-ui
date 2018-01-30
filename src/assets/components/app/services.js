@@ -1,6 +1,11 @@
 
 // @flow
 
+/**
+ * Various helper services are contained here.
+ * This includes network transports, local storage wrappers, etc.
+ */
+
 import { Lokka } from "lokka";
 import { Transport as LokkaTransport } from "lokka-transport-http";
 import Dexie from "dexie";

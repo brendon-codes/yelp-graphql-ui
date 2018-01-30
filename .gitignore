@@ -4,4 +4,4 @@
 /src/webroot/*.js
 /src/webroot/*.css
 /src/webroot/*.map
-__generated__/
+/sysconfigs/local/local/etc/nginx/inc/yelp-key.conf

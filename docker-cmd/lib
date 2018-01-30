@@ -1,0 +1,23 @@
+#!/bin/bash
+
+##
+## By default, Linux (afaik) requires sudo for docker.
+## I have at least confirmed this on Ubuntu and Fedora desktops.
+##
+## But, on OSX it seems to be preferred to use docker without
+## sudo.
+##
+## So, to prevent problems, this does a basic check to see
+## if sudo is required or not.
+##
+
+shopt -s expand_aliases
+
+$(docker ps &> /dev/null)
+if [ "${?}" != "0" ]; then
+  set_alias () { alias mydocker="sudo docker"; }
+else
+  set_alias () { alias mydocker="docker"; }
+fi;
+set_alias
+

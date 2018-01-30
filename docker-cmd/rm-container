@@ -7,4 +7,4 @@ source "${CURRDIR}/lib"
 ## Begin App
 ##
 
-mydocker exec --interactive --tty dsyelp /bin/bash
+mydocker rm --force --volumes dsyelp

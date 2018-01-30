@@ -1,0 +1,11 @@
+#!/bin/bash
+
+CURRDIR="$(dirname "${0}")"
+source "${CURRDIR}/lib"
+
+##
+## Begin App
+##
+
+mydocker exec --interactive --tty dsyelp /bin/bash -c 'cd /App/repos/dsyelp; rm -fr node_modules; npm install;'
+
