@@ -1,6 +1,12 @@
 
 // @flow
 
+/**
+ * This file is the intial entry point into
+ * the application.  It initiates react and loads
+ * the root component.
+ */
+
 import React from "react";
 import ReactDom from "react-dom";
 

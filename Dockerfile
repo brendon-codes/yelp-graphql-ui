@@ -29,6 +29,7 @@ ENV LC_ALL en_US.UTF-8
 RUN apt-get install -y software-properties-common;
 RUN apt-get install -y python-software-properties;
 RUN apt-get install -y build-essential;
+RUN apt-get install -y curl;
 
 ##
 ## Emacs setup
@@ -41,6 +42,7 @@ RUN apt-get install -y emacs-nox;
 RUN add-apt-repository ppa:nginx/stable;
 RUN apt-get update;
 RUN apt-get install -y nginx;
+RUN update-rc.d -f nginx enable;
 RUN rm -f /etc/nginx/sites-available/default;
 RUN mkdir /etc/nginx/inc;
 COPY sysconfigs/local/local/etc/nginx/sites-available/default /etc/nginx/sites-available/default

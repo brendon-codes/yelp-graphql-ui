@@ -1,0 +1,117 @@
+#!/bin/bash
+
+##
+## Include docker helper
+##
+
+CURRDIR="$(dirname "${0}")"
+DOCKERCMD="${CURRDIR}/docker-cmd"
+source "${DOCKERCMD}/lib"
+
+YELP_KEY_NGINX_TPL="./sysconfigs/local/local/etc/nginx/inc/yelp-key.conf.tpl"
+YELP_KEY_NGINX_CNF="./sysconfigs/local/local/etc/nginx/inc/yelp-key.conf"
+
+echo
+echo "** Beginning"
+echo
+
+##
+## Check if image exists
+##
+image_id=$(mydocker images --quiet 'dsyelp')
+
+##
+## Image does not exist, so we need to do first time setup
+##
+if [ "${image_id}" =  "" ]; then
+
+  ##
+  ## Setup yelp key
+  ##
+  if [ ! -f "${YELP_KEY_NGINX_CNF}" ]; then
+    echo "!! Enter your Yelp API key, then press Enter."
+    echo "!! This should be a long character string:"
+    read yelpkey
+    echo
+    echo "** Creating secret Nginx Yelp key config file"
+    echo
+    python -c \
+      'import sys; sys.stdout.write(sys.stdin.read() % {"YELPKEY": sys.argv[1].strip()})' "${yelpkey}" \
+      < "${YELP_KEY_NGINX_TPL}" \
+      > "${YELP_KEY_NGINX_CNF}"
+  fi
+
+  ##
+  ## Build image
+  ##
+  echo
+  echo "** Building image"
+  echo
+  ${DOCKERCMD}/build
+
+fi;
+
+##
+## By now, image should be built, so we should start
+##
+echo
+echo "** Starting container"
+echo
+${DOCKERCMD}/start
+
+##
+## Build node modeuls
+##
+echo
+echo "** Building NPM modules"
+echo
+${DOCKERCMD}/npm-build
+
+##
+## Build webpack
+##
+echo
+echo "** Building Webpack assets"
+echo
+${DOCKERCMD}/webpack-build
+
+##
+## Run tests
+##
+echo
+echo "** Running tests"
+echo
+${DOCKERCMD}/tests
+
+##
+## Tail logs just to keep this script open
+##
+echo
+echo "** Application ready"
+echo "**"
+echo "** You should now be able to browse "
+echo "** the site from your host/desktop browser "
+echo "** by visiting http://localhost:9191/ "
+echo "**"
+echo "** Now tailing the Nginx webserver logs "
+echo "** Press Ctrl+C to shutdown and remove the container "
+echo
+${DOCKERCMD}/logs
+
+##
+## Stopping container
+##
+echo
+echo "** Stopping and removing container"
+echo
+${DOCKERCMD}/stop
+
+##
+## Give message about removing image
+##
+echo
+echo "** If you want to remove the image, "
+echo "** run ./docker-cmd/rm-image "
+echo "**"
+echo "** DONE"
+echo

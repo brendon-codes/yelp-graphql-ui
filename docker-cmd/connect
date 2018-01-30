@@ -1,17 +1,7 @@
 #!/bin/bash
 
-shopt -s expand_aliases
-
-##
-## Check if we need sudo
-##
-$(docker ps &> /dev/null)
-if [ "${?}" != "0" ]; then
-  set_alias () { alias mydocker="sudo docker"; }
-else
-  set_alias () { alias mydocker="docker"; }
-fi;
-set_alias
+CURRDIR="$(dirname "${0}")"
+source "${CURRDIR}/lib"
 
 ##
 ## Begin App

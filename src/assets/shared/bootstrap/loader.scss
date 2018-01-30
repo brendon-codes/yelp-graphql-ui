@@ -1,4 +1,9 @@
 
+/**
+ * This file is a helper to load various bootstrap
+ * sass files. It also loads in the local variables overrid file.
+ */
+
 @import "../../../../node_modules/bootstrap/scss/_functions.scss";
 @import "./variables.scss";
 @import "../../../../node_modules/bootstrap/scss/bootstrap.scss";

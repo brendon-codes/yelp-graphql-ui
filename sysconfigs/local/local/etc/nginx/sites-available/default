@@ -13,13 +13,23 @@ server {
         break;
     }
 
-    location = /v3/graphql {
+    location = /graphql {
         include /etc/nginx/inc/yelp-key.conf;
         proxy_set_header Authorization "Bearer $YELP_KEY";
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header Host api.yelp.com;
-        proxy_pass https://api.yelp.com;
+        proxy_pass https://api.yelp.com/v3/graphql;
+        proxy_ssl_session_reuse off;
+        proxy_redirect off;
+        break;
+    }
+
+    location = /categories {
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host www.yelp.com;
+        proxy_pass https://www.yelp.com/developers/documentation/v3/all_category_list/categories.json;
         proxy_ssl_session_reuse off;
         proxy_redirect off;
         break;

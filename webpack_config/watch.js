@@ -1,18 +1,22 @@
 
+/**
+ * This is the webpack config file used for
+ * development work. This will start up the watcher.
+ */
+
 "use strict";
 
 const Webpack = require("webpack");
 const Extend = require("util")._extend;
 const Path = require("path");
 var FlowBabelWebpackPlugin = require("flow-babel-webpack-plugin");
-//const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 const ExtractTextPlugin = require("extract-text-webpack-plugin");
 
 
 const BuildBase = function (inJs, outJs, outCss) {
   return {
     devtool: "inline-source-map",
-    watch: false,
+    watch: true,
     entry: {
       site: inJs
     },
