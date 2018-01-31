@@ -43,7 +43,12 @@ import {
   DISTANCE_METERS_PER_MILE,
   DISTANCE_DEFAULT,
   ZIP_DEFAULT,
-  INITIAL_FETCH_MODE
+  INITIAL_FETCH_MODE,
+  SORT_FIELD_SEARCH_DEFAULT,
+  SORT_FIELD_FAV_DEFAULT,
+  SORT_DIR_DEFAULT,
+  CAT_CODE_DEFAULT,
+  CAT_VAL_DEFAULT
 } from "./constants.js";
 
 import {
@@ -79,18 +84,18 @@ class AppMain extends React.Component<AppProps, AppState> {
     return {
       resultsStatus: "ready",
       fetchMode: null,
-      sortField: "distance",
-      sortDir: "asc",
+      sortField: SORT_FIELD_SEARCH_DEFAULT,
+      sortDir: SORT_DIR_DEFAULT,
       offset: 0,
       favorites: null,
       catTrie: null,
       suggestedCats: [],
       selectedCat: {
-        alias: "restaurants",
-        title: "Restaurants",
-        clean: "restaurants"
+        alias: CAT_CODE_DEFAULT,
+        title: CAT_VAL_DEFAULT,
+        clean: CAT_CODE_DEFAULT
       },
-      typedCatVal: "Restaurants",
+      typedCatVal: CAT_VAL_DEFAULT,
       zip: ZIP_DEFAULT,
       zipFinal: ZIP_DEFAULT,
       distanceMiles: DISTANCE_DEFAULT,
@@ -1275,6 +1280,30 @@ class AppMain extends React.Component<AppProps, AppState> {
         varCat
       )
     );
+    //
+    // Only set default sort field and dir if we are switching
+    // from favorites to search.
+    // If we are already in search, then use
+    // existing sort field and dir.
+    //
+    const sortField: string = (
+      (
+        (this.state.fetchMode === "search") &&
+          (this.state.sortField !== undefined) &&
+          (this.state.sortField !== null)
+      ) ?
+        (this.state.sortField) :
+        (SORT_FIELD_SEARCH_DEFAULT)
+    );
+    const sortDir: string = (
+      (
+        (this.state.fetchMode === "search") &&
+          (this.state.sortDir !== undefined) &&
+          (this.state.sortDir !== null)
+      ) ?
+        (this.state.sortDir) :
+        (SORT_DIR_DEFAULT)
+    );
     return (
       GQL_CLIENT
         .send(queryObj.query, queryObj.variables)
@@ -1286,33 +1315,23 @@ class AppMain extends React.Component<AppProps, AppState> {
           return (
             this.setStatePromise({
               fetchMode: "search",
+              sortField: sortField,
+              sortDir: sortDir,
               resultsStatus: "ready",
               offset: offset,
               businessCountTotal: data.search.total,
-              businessRecs: this.sortBizRecsFromState(data.search.business)
+              businessRecs: (
+                this.sortBizRecs(
+                  data.search.business,
+                  sortField,
+                  sortDir
+                )
+              )
             })
               .then(() => true)
           );
         })
     );
-  }
-
-  /**
-   * Wrapper to resort business recs
-   *
-   * @param {AppBizRecs} bizRecs - Business records
-   * @return {AppBizRecs} - Sorted recs
-   */
-  sortBizRecsFromState (bizRecs: AppBizRecs): AppBizRecs {
-    if (this.state.sortField === undefined || this.state.sortField === null) {
-      this.setAppFatal("sortField must be set");
-      return [];
-    }
-    if (this.state.sortDir === undefined || this.state.sortDir === null) {
-      this.setAppFatal("sortDir must be set");
-      return [];
-    }
-    return this.sortBizRecs(bizRecs, this.state.sortField, this.state.sortDir);
   }
 
   /**
@@ -1594,15 +1613,41 @@ class AppMain extends React.Component<AppProps, AppState> {
       this.setAppFatal("favorites must be set");
       return this.buildPromise(false);
     }
+    //
+    // Only set default sort field and dir if we are switching
+    // from search to favorites.
+    // If we are already in favorites, then use
+    // existing sort field and dir.
+    //
+    const sortField: string = (
+      (
+        (this.state.fetchMode === "favorite") &&
+          (this.state.sortField !== undefined) &&
+          (this.state.sortField !== null)
+      ) ?
+        (this.state.sortField) :
+        (SORT_FIELD_FAV_DEFAULT)
+    );
+    const sortDir: string = (
+      (
+        (this.state.fetchMode === "favorite") &&
+          (this.state.sortDir !== undefined) &&
+          (this.state.sortDir !== null)
+      ) ?
+        (this.state.sortDir) :
+        (SORT_DIR_DEFAULT)
+    );
+    //
+    // No favs exist
+    //
     if (this.state.favorites.size === 0) {
       return (
         this.setStatePromise(
           {
             fetchMode: "favorite",
             resultsStatus: "ready",
-            // By default, sort by name when viewing favorites
-            sortField: "name",
-            sortDir: "asc",
+            sortField: sortField,
+            sortDir: sortDir,
             selectedCat: null,
             typedCatVal: null,
             zip: null,
@@ -1647,6 +1692,8 @@ class AppMain extends React.Component<AppProps, AppState> {
             this.setStatePromise({
               fetchMode: "favorite",
               resultsStatus: "ready",
+              sortField: sortField,
+              sortDir: sortDir,
               selectedCat: null,
               typedCatVal: null,
               zip: null,
