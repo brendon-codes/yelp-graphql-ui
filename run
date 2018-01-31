@@ -31,12 +31,17 @@ if [ "${image_id}" =  "" ]; then
   if [ ! -f "${YELP_KEY_NGINX_CNF}" ]; then
     echo "!! Enter your Yelp API key, then press Enter."
     echo "!! This should be a long character string:"
-    read yelpkey
+    read yelpkey_orig
+    yelpkey=$(python -c 'import sys; sys.stdout.write(sys.argv[1].strip());' "${yelpkey_orig}")
+    if [ ${#yelpkey} -ne 128 ]; then
+      echo "Invalid yelp key. Must be 128 bytes."
+      exit 1
+    fi
     echo
     echo "** Creating secret Nginx Yelp key config file"
     echo
     python -c \
-      'import sys; sys.stdout.write(sys.stdin.read() % {"YELPKEY": sys.argv[1].strip()})' "${yelpkey}" \
+      'import sys; sys.stdout.write(sys.stdin.read() % {"YELPKEY": sys.argv[1]})' "${yelpkey}" \
       < "${YELP_KEY_NGINX_TPL}" \
       > "${YELP_KEY_NGINX_CNF}"
   fi
